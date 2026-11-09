@@ -1,0 +1,39 @@
+import { useEffect, useState } from 'react';
+import { Button } from './ui/button';
+import { Input } from './ui/input';
+import { Textarea } from './ui/textarea';
+import { Field } from './editor-ui';
+import { moduleRecipes } from '@/module-recipes';
+import { defaultModule, type BlockData, type BlockNode, type BlockVisuals, type FlowSettings } from '@/model';
+export function ModuleEditor({ node, update }: { node: BlockNode; update: (patch: Partial<BlockData>) => void }) {
+  const source = node.data.module ?? defaultModule;
+  const [draft, setDraft] = useState(source);
+  useEffect(() => setDraft(source), [node.id, source]);
+  return <><Field label="Mask ES module"><Textarea className="module-editor" aria-label="Mask ES module" spellCheck={false} value={draft} onChange={e => setDraft(e.target.value)}/></Field>
+    <div className="recipe-buttons">{Object.entries(moduleRecipes).map(([label, code]) => <Button size="sm" variant="outline" key={label} onClick={() => setDraft(code)}>{label}</Button>)}</div>
+    <Button size="sm" disabled={draft === source} onClick={() => update({ module: draft })}>Apply module</Button>
+    <p className="field-help">Export default mount(&#123; element, inputs, value, emit &#125;). Inputs use port IDs. Return a cleanup function or &#123; update(inputs, value), destroy() &#125;. CDN examples need internet access.</p></>;
+}
+export function VisualProperties({ node, update, resize }: { node: BlockNode; update: (patch: Partial<BlockData>) => void; resize: (dimension: 'width' | 'height', value: number) => void }) {
+  const v = node.data.visuals ?? {};
+  const change = (patch: Partial<BlockVisuals>) => update({ visuals: { ...v, ...patch } });
+  return <section className="property-section">
+    <h3>Block mask</h3>
+    <div className="dimension-fields"><Field label="Fill"><Input type="color" aria-label="Block fill" value={v.background ?? '#ffffff'} onChange={e => change({ background: e.target.value })}/></Field><Field label="Ink"><Input type="color" aria-label="Block ink" value={v.foreground ?? '#171717'} onChange={e => change({ foreground: e.target.value })}/></Field></div>
+    <Button variant="outline" size="sm" onClick={() => update({ visuals: { ...v, background: undefined, foreground: undefined } })}>Use theme colors</Button>
+    <div className="dimension-fields">{(['width', 'height'] as const).map(d => <Field key={d} label={d === 'width' ? 'Width (px)' : 'Height (px)'}><Input type="number" aria-label={`Block ${d}`} min={d === 'width' ? 120 : 90} max={2000} value={node[d] ?? (d === 'width' ? 164 : 116)} onChange={e => resize(d, Number(e.target.value))}/></Field>)}</div>
+    <Field label="Corner radius"><Input aria-label="Block corner radius" type="number" min={0} max={60} value={v.radius ?? 9} onChange={e => change({ radius: Math.max(0, Math.min(60, Number(e.target.value))) })}/></Field>
+    {([['showHeader', 'Type header'], ['showLabel', 'Block label'], ['showValue', 'Mask content'], ['showPortLabels', 'Port labels']] as const).map(([key, label]) => <label className="visibility-option" key={key}><span>{label}</span><input type="checkbox" checked={v[key] !== false} onChange={e => change({ [key]: e.target.checked })}/></label>)}
+    {node.data.kind === 'javascript' && <ModuleEditor node={node} update={update}/>}
+  </section>;
+}
+export function ConnectionProperties({ settings, update }: { settings: FlowSettings; update: (patch: FlowSettings) => void }) {
+  return <><Field label="Path"><select aria-label="Connection path" value={settings.route ?? 'smoothstep'} onChange={e => update({ route: e.target.value as FlowSettings['route'] })}><option value="smoothstep">Orthogonal</option><option value="bezier">Bézier curve</option></select></Field>
+    <p className="field-help">Double-click a wire to add a waypoint. Select the wire, then drag its points to shape it. Double-click a point to remove it.</p>
+    <Button variant="outline" size="sm" disabled={!settings.points?.length} onClick={() => update({ points: [] })}>Reset waypoints</Button>
+    <Field label="Flow animation"><select aria-label="Flow animation" value={settings.animation ?? 'none'} onChange={e => update({ animation: e.target.value as FlowSettings['animation'] })}><option value="none">None</option><option value="dash">Moving dashes</option><option value="pulse">Travelling pulse</option></select></Field>
+    <Field label="Travel time (seconds)"><Input aria-label="Animation travel time" type="number" min={0.1} max={20} step={0.1} value={settings.speed ?? 2} onChange={e => update({ speed: Math.max(0.1, Math.min(20, Number(e.target.value))) })}/></Field>
+    <label className="visibility-option"><span>Reverse flow</span><input type="checkbox" checked={settings.reverse ?? false} onChange={e => update({ reverse: e.target.checked })}/></label>
+    <div className="dimension-fields"><Field label="Wire color"><Input aria-label="Wire color" type="color" value={settings.color ?? '#737373'} onChange={e => update({ color: e.target.value })}/></Field><Field label="Stroke width"><Input aria-label="Wire width" type="number" min={1} max={8} value={settings.width ?? 1.5} step={0.5} onChange={e => update({ width: Math.max(1, Math.min(8, Number(e.target.value))) })}/></Field></div>
+  </>;
+}

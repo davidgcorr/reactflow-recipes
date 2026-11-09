@@ -1,5 +1,7 @@
 # milver
 
+A collection of reusable block, mask, connection, and nested-canvas recipes for future projects. The focus is on exploring and extending functionality.
+
 A React + TypeScript block-diagram editor built with React Flow and actual [shadcn/ui](https://ui.shadcn.com/) components. The canvas fills the browser; controls and independently collapsible panels float above it.
 
 ## Run
@@ -15,12 +17,12 @@ Open the URL Vite prints. `npm run build` creates `dist/`, `npm run preview` ser
 
 ## Workspace
 
-- The hamburger button opens/closes the floating block library. The top-right panel button opens/closes the inspector. Each panel also has its own close button.
-- The canvas toolbar floats at the top center. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
+- The hamburger button opens/closes the floating block library. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Each panel also has its own close button.
+- Canvas tools float at the bottom; the canvas hierarchy stays at the top, including the root canvas. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
 - Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
-- Drag blocks to move them. Select a block to reveal four corner resize handles. The inspector edits names, values, descriptions, dimensions, and ports.
+- Drag blocks to move them. Select a block to reveal four corner resize handles. The inspector has **Logic** (names, values, descriptions, ports) and **Visuals** (fill, ink, dimensions, radius, visibility, and module source) tabs.
 - Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Move a port and its connections follow it.
-- Drag a filled output to a hollow input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
+- Ports use concentric circles: outputs have a filled core, inputs have hollow blue rings. Drag an output to an input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
 - Scroll or pinch to zoom. Hold Space and drag, use the middle/right mouse button, or choose the hand tool to pan. Drag the background in selection mode to select multiple blocks.
 - Edits are saved locally in your browser. Export a JSON file for a portable copy. The importer reads the previous recipe's version-1 diagrams; previous local data is migrated without deleting the old storage entry.
 
@@ -39,7 +41,7 @@ Inputs and outputs remain synchronized in both directions: editing a parent's po
 
 ## shadcn theme
 
-The first workspace uses a black-and-white Neutral palette. Open the palette icon to change Light/Dark mode, choose a preset, tune **OKLCH hue and chroma**, or change corner radius. Chroma 0 is monochrome. Theme settings are saved and included in diagram JSON. Blocks, ports, floating panels, dialogs, and controls share the same semantic CSS variables. Legacy per-block `data.color` remains in the JSON for compatibility; rendering uses the workspace theme.
+The first workspace uses a black-and-white Neutral palette. Open the palette icon to change Light/Dark mode, choose a preset, tune **OKLCH hue and chroma**, or change corner radius. Chroma 0 is monochrome. Theme settings are saved and included in diagram JSON. Blocks, ports, floating panels, dialogs, and controls share the same semantic CSS variables. Legacy per-block `data.color` remains in JSON for compatibility. `data.visuals` optionally overrides theme fill and ink and controls header, label, mask content, port labels, dimensions and radius. Use **Use theme colors** to clear fill and ink overrides.
 
 The official shadcn CLI generated the components in `src/components/ui/`. Radix provides keyboard interactions, focus management, dialogs, collapsibles, selects, tooltips, and sliders. `components.json` configures future shadcn additions. `src/theme.ts` maps theme settings to semantic tokens.
 
@@ -119,3 +121,29 @@ React Flow is MIT licensed. The application hides its on-canvas badge using `pro
 The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https://github.com/xyflow/xyflow). A reference checkout was fetched to `/tmp/reactflow-recipes-xyflow-reference` during initial development.
 
 This is a diagram editor, not a numerical simulation engine. The block presets do not execute calculations or fabricate signal results.
+
+## Programmable JS masks
+
+Add **JS module** from the library, then select **Visuals**. Choose a DOM, LaTeX, or Three.js recipe, edit the source, and click **Apply module**. The module renders inside the block mask, in an iframe with `sandbox="allow-scripts"` and an opaque origin. It cannot access the editor DOM or local storage. CDN imports require an internet connection; the DOM recipe works offline. Three.js requires WebGL. The LaTeX recipe uses [KaTeX](https://katex.org/docs/api); the 3D recipe follows [Three.js scene setup](https://threejs.org/manual/pages/creating-a-scene.html).
+
+```js
+export default function mount({ element, inputs, value, emit }) {
+  function update(inputs, value) {
+    const x = Number(inputs['in-0'] ?? value);
+    element.textContent = `Value: ${x}`;
+    emit(x * 2, 'out-0');
+  }
+  update(inputs, value);
+  return { update, destroy() { /* dispose graphics/listeners here */ } };
+}
+```
+
+`element` is the mask container. `inputs` maps input port IDs to scalar values (number, string, boolean or null); `value` is the block's fallback parameter string. `emit(value, outputPortId)` updates an output (`out-0` by default). The Logic tab shows live input/output values; expanded port properties show IDs. A module can return a cleanup function, or an object with `update(inputs, value)` and `destroy()`. Without an update method, input changes dispose and mount the mask again. ResizeObserver is available for graphics that need to follow block size.
+
+The preview layer in `src/runtime.ts` propagates constants, gains, signed sums, and emitted JS outputs within the current canvas. Unsupported operations, disconnected inputs and feedback signals stay null. There is no time stepping, integration, or evaluation across parent boundaries. This layer is deliberately small so consuming projects can supply their own runtime. Module source, visuals, and connection options survive save/load, JSON export, and undo/redo. Emitted values are transient. Hiding mask content keeps the module mounted.
+
+## Connection recipes
+
+Select a connection to choose **Orthogonal** or **Bézier curve**, stroke color and width, and **None**, **Moving dashes**, or **Travelling pulse** animation. Travel time and reverse flow are configurable per connection. Double-click a wire to insert a waypoint near that segment; select the wire to drag its points. Double-click a point to remove it, or use **Reset waypoints**. Orthogonal routing retains square-axis segments with rounded corners; Bézier routing passes smoothly through the waypoints.
+
+`src/connections.ts` shares route geometry between the editor and publication exports. Exported SVG/PNG/HTML/GIF use the chosen routing and basic block appearance. Programmable masks are represented by a static “JS module” label in publication exports; JSON retains the executable source. The publication GIF's existing global flow animation remains independent of editor animation settings.

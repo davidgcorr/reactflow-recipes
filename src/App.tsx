@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, MarkerType, ConnectionLineType,
   applyNodeChanges, applyEdgeChanges, addEdge, useReactFlow,
@@ -23,15 +23,19 @@ import { Appearance } from '@/components/appearance';
 import { ExportDialog } from '@/components/export-dialog';
 import { Block, BlockContext } from '@/components/block-node';
 import { IconButton } from '@/components/editor-ui';
+import { FlowContext, FlowEdge } from '@/components/flow-edge';
+import { PreviewContext } from '@/components/module-mask';
+import { previewSignals, type Signals, type Signal } from '@/runtime';
 import { Inspector } from '@/components/inspector';
 import {
   canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
   makeNode, parseDiagram, serializeDiagram, templates, updateCanvas,
-  type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings,
+  type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
 } from '@/model';
 import { themeVariables } from '@/theme';
 
 const nodeTypes = { block: Block };
+const edgeTypes = { recipe: FlowEdge };
 const storageKey = 'milver.diagram.v1';
 const uiKey = 'milver.workspace.v1';
 type WorkspaceUI = { library: boolean; inspector: boolean; snap: boolean; minimap: boolean };
@@ -51,6 +55,7 @@ function loadUI(): WorkspaceUI {
 }
 
 function Editor() {
+  const [emitted, setEmitted] = useState<Record<string, Signals>>({});
   const [initial] = useState(load);
   const [document, setDocument] = useState(initial.document);
   const [path, setPath] = useState<string[]>([]);
@@ -76,6 +81,23 @@ function Editor() {
   const nodes = canvas.nodes; const edges = canvas.edges;
   const selected = nodes.find(n => n.selected);
   const selectedEdge = edges.find(e => e.selected);
+  const preview = useMemo(() => previewSignals(canvas, emitted), [canvas, emitted]);
+  const emit = useCallback((id: string, port: string, value: Signal) => {
+    if (!canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id)?.data.ports.some(p => p.id === port && p.type === 'output')) return;
+    setEmitted(current => Object.is(current[id]?.[port], value) ? current : { ...current, [id]: { ...current[id], [port]: value } });
+  }, []);
+  const moduleVersions = useRef<Record<string, string>>({});
+  const runtimeKey = JSON.stringify([path, nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, n.data.module])]);
+  useEffect(() => {
+    const previous = moduleVersions.current;
+    const versions = Object.fromEntries(nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, JSON.stringify([path, n.data.module])]));
+    moduleVersions.current = versions;
+    setEmitted(current => Object.fromEntries(Object.entries(current).filter(([id]) => versions[id] !== undefined && previous[id] === versions[id])));
+  }, [runtimeKey]);
+  useEffect(() => {
+    setUI(u => ({ ...u, inspector: !!(selected || selectedEdge), ...(selected && window.innerWidth < 700 ? { library: false } : {}) }));
+    if (selected || selectedEdge) setAppearanceOpen(false);
+  }, [selected?.id, selectedEdge?.id]);
   const theme = document.theme ?? defaultTheme;
   const nested = path.length > 0;
   const replace = useCallback((next: Diagram) => { documentRef.current = next; setDocument(next); }, []);
@@ -169,6 +191,7 @@ function Editor() {
     event.preventDefault(); const kind = event.dataTransfer.getData('application/milver') || event.dataTransfer.getData('application/flowbench');
     if (availableTemplates.some(t => t.kind === kind)) addBlock(kind, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
   };
+  const updateEdge = (id: string, patch: FlowSettings, remember = true) => editCanvas(c => ({ ...c, edges: c.edges.map(e => e.id === id ? { ...e, data: { ...e.data, ...patch } } : e) }), remember);
   const updateBlock = (patch: Partial<BlockData>) => {
     if (!selected) return;
     editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? { ...n, data: { ...n.data, ...patch } } : n) }));
@@ -257,9 +280,9 @@ function Editor() {
     crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
   }
 
-  return <TooltipProvider delayDuration={250}><BlockContext.Provider value={{ snapshot, enter }}><main className="milver-workspace" aria-label="milver block diagram editor">
+  return <TooltipProvider delayDuration={250}><PreviewContext.Provider value={{ values: preview, emit }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter }}><main className="milver-workspace" aria-label="milver block diagram editor">
     <ReactFlow<BlockNode>
-      nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+      nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
       onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}
       onNodeDragStart={snapshot} onSelectionDragStart={snapshot}
@@ -306,9 +329,9 @@ function Editor() {
       <Separator/><div className="library-footnote"><span className="port-indicator input"/>input<span className="port-indicator output"/>output<span>Drag to connect</span></div>
     </Card></CollapsibleContent></Collapsible>
 
-    <div className="right-panel-position">{appearanceOpen ? <Appearance theme={theme} update={updateTheme} close={() => setAppearanceOpen(false)}/> : <Collapsible open={ui.inspector}><CollapsibleContent><Inspector node={selected} edge={selectedEdge} nodes={nodes} activePort={activePort} setActivePort={setActivePort} close={() => setUI(u => ({ ...u, inspector: false }))} update={updateBlock} resize={resize} updatePort={updatePort} removePort={removePort} addPort={addPort} enter={enter} duplicate={duplicate} remove={deleteSelection}/></CollapsibleContent></Collapsible>}</div>
+    <div className="right-panel-position">{appearanceOpen ? <Appearance theme={theme} update={updateTheme} close={() => setAppearanceOpen(false)}/> : <Collapsible open={ui.inspector}><CollapsibleContent><Inspector node={selected} edge={selectedEdge} updateEdge={patch => selectedEdge && updateEdge(selectedEdge.id, patch)} nodes={nodes} activePort={activePort} setActivePort={setActivePort} close={() => setUI(u => ({ ...u, inspector: false }))} update={updateBlock} resize={resize} updatePort={updatePort} removePort={removePort} addPort={addPort} enter={enter} duplicate={duplicate} remove={deleteSelection}/></CollapsibleContent></Collapsible>}</div>
 
-    {nested && <Card className="floating-island breadcrumbs"><IconButton label="Back to parent canvas" onClick={() => goTo(path.slice(0, -1))}><ArrowLeft/></IconButton><Separator orientation="vertical"/><Button variant="ghost" size="sm" onClick={() => goTo([])}><Home/><span>{document.name || 'Root'}</span></Button>{crumbs.map((crumb, index) => <span key={crumb.path.join('/')} className="breadcrumb-item"><ChevronRight/><Button variant="ghost" size="sm" aria-current={index === crumbs.length - 1 ? 'page' : undefined} onClick={() => goTo(crumb.path)}>{crumb.label}</Button></span>)}</Card>}
+    <Card className="floating-island breadcrumbs" aria-label="Canvas hierarchy">{nested && <><IconButton label="Back to parent canvas" onClick={() => goTo(path.slice(0, -1))}><ArrowLeft/></IconButton><Separator orientation="vertical"/></>}<Button variant="ghost" size="sm" onClick={() => goTo([])}><Home/><span>{document.name || 'Root'}</span></Button>{crumbs.map((crumb, index) => <span key={crumb.path.join('/')} className="breadcrumb-item"><ChevronRight/><Button variant="ghost" size="sm" aria-current={index === crumbs.length - 1 ? 'page' : undefined} onClick={() => goTo(crumb.path)}>{crumb.label}</Button></span>)}</Card>
 
     <Card className="floating-island bottom-left-island"><IconButton label="Help and shortcuts" onClick={() => setHelpOpen(true)}><CircleHelp/></IconButton><Separator orientation="vertical"/><span className="diagram-stats">{nodes.length} blocks<span>·</span>{edges.length} connections</span><span className="save-label">{saved ? 'Saved locally' : 'Saving…'}</span></Card>
     <Card className="floating-island zoom-island"><IconButton label="Zoom out" onClick={() => void flow.zoomOut({ duration: 150 })}><Minus/></IconButton><span className="zoom-value">{Math.round(canvas.viewport.zoom * 100)}%</span><IconButton label="Zoom in" onClick={() => void flow.zoomIn({ duration: 150 })}><Plus/></IconButton><Separator orientation="vertical"/><IconButton label="Fit to view (1)" onClick={() => void flow.fitView({ padding: 0.35, maxZoom: 1, duration: 200 })}><Expand/></IconButton><IconButton label="Toggle minimap" aria-pressed={ui.minimap} onClick={() => setUI(u => ({ ...u, minimap: !u.minimap }))}><Map/></IconButton></Card>
@@ -319,8 +342,8 @@ function Editor() {
 
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} diagram={document} path={path} notify={notify}/>
     <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
-    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Search blocks', '/'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. This editor does not run numerical simulations.</p><a className="license-link" href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
+    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Search blocks', '/'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. A collection of reusable block and canvas recipes. Connected constants, gains, sums and JS modules provide live value previews; feedback and time-domain simulation are left to consuming projects.</p><a className="license-link" href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
     {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
-  </main></BlockContext.Provider></TooltipProvider>;
+  </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></TooltipProvider>;
 }
 export default function App() { return <ReactFlowProvider><Editor/></ReactFlowProvider>; }

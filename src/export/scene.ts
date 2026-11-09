@@ -1,5 +1,6 @@
-import { getSmoothStepPath, Position } from '@xyflow/react';
-import { canvasAt, defaultTheme, type BlockNode, type Canvas, type Diagram, type Port, type Side, type ThemeSettings } from '../model';
+import { connectionPath } from '../connections';
+import { Position } from '@xyflow/react';
+import { canvasAt, defaultTheme, type BlockNode, type Canvas, type Diagram, type Port, type Side, type ThemeSettings, type FlowSettings } from '../model';
 import { themeVariables } from '../theme';
 
 export type ExportFormat = 'html' | 'svg' | 'png' | 'gif' | 'json';
@@ -62,7 +63,10 @@ function canvasBounds(canvas: Canvas) {
   return { x, y, width, height };
 }
 function renderBlock(node: BlockNode, index: string, palette: ExportPalette, radius: number, destination?: number): string {
-  const { data } = node; const w = node.width ?? 164, h = node.height ?? 116;
+  const { data } = node; const v = data.visuals ?? {};
+  palette = { ...palette, card: v.background ?? palette.card, primary: v.foreground ?? palette.primary };
+  radius = v.radius ?? radius;
+  const w = node.width ?? 164, h = node.height ?? 116;
   const parent = data.kind === 'subsystem', boundary = data.kind === 'inport' || data.kind === 'outport';
   const clip = `block-${index}`; const textClip = `label-${index}`;
   const text = (x: number, y: number, value: string, size: number, attrs = '') => `<text x="${x}" y="${y}" font-size="${size}" ${attrs}>${escapeXml(value)}</text>`;
@@ -71,13 +75,15 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
     symbol = `<g transform="translate(${w / 2 - 45} ${h / 2 - 13})" fill="${palette.secondary}" stroke="${palette.primary}"><path d="M24 10h42" fill="none"/>${[0, 34, 68].map(x => `<rect x="${x}" y="0" width="22" height="20" rx="3"/>`).join('')}</g>`;
   } else if (data.kind === 'scope') symbol = `<path d="M-27 6h8l8-15 10 17 10-12 8 7h10" transform="translate(${w / 2} ${h / 2})" fill="none" stroke="${palette.primary}" stroke-width="1.5" stroke-linejoin="round"/>`;
   else symbol = text(w / 2, h / 2 + 8, boundary ? data.kind === 'inport' ? '↳' : '↗' : data.kind === 'gain' ? `× ${data.value}` : data.value || 'ƒ', 29, `text-anchor="middle" fill="${palette.primary}" font-family="Georgia,serif" clip-path="url(#${clip})"`);
+  if (data.kind === 'javascript') symbol = text(w / 2, h / 2 + 8, 'JS module', 18, `text-anchor="middle" fill="${palette.primary}"`);
+  if (v.showValue === false) symbol = '';
   const ports = data.ports.map(port => {
     const absolute = handlePoint(node, port); const x = absolute.x - node.position.x, y = absolute.y - node.position.y;
     const left = port.side === 'left', right = port.side === 'right', top = port.side === 'top';
-    return `<rect x="${x - 3.5}" y="${y - 3.5}" width="7" height="7" rx="1" fill="${port.type === 'input' ? palette.card : palette.primary}" stroke="${palette.primary}"/>` + text(left ? x + 10 : right ? x - 10 : x, left || right ? y + 2 : top ? y + 15 : y - 9, port.name, 7, `text-anchor="${left ? 'start' : right ? 'end' : 'middle'}" fill="${palette.muted}" clip-path="url(#${clip})"`);
+    return `<circle cx="${x}" cy="${y}" r="5.5" fill="${palette.card}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/><circle cx="${x}" cy="${y}" r="2.5" fill="${port.type === 'input' ? palette.card : palette.primary}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/>` + (v.showPortLabels === false ? '' : text(left ? x + 12 : right ? x - 12 : x, left || right ? y + 2 : top ? y + 17 : y - 11, port.name, 7, `text-anchor="${left ? 'start' : right ? 'end' : 'middle'}" fill="${palette.muted}" clip-path="url(#${clip})"`));
   }).join('');
   const interactive = destination === undefined ? '' : ` data-enter="${destination}" role="button" tabindex="0" aria-label="${escapeXml(`Enter ${data.label}`)}" style="cursor:pointer"`;
-  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="12" y="${h - 28}" width="${w - 24}" height="24"/></clipPath></defs><rect width="${w}" height="${h}" rx="${Math.min(radius, w / 2, h / 2)}" fill="${palette.card}" stroke="${palette.border}"${boundary ? ' stroke-dasharray="4 3"' : ''}/>${text(12, 18, parent ? 'PARENT' : boundary ? `${data.kind === 'inport' ? 'INPUT' : 'OUTPUT'} PORT` : data.kind.toUpperCase(), 7, `letter-spacing="0.8" fill="${palette.muted}" clip-path="url(#${clip})"`)}${parent ? `<rect x="${w - 29}" y="8" width="17" height="16" rx="3" fill="${palette.secondary}"/>${text(w - 20.5, 19, String(data.canvas?.nodes.length ?? 0), 8, `text-anchor="middle" fill="${palette.muted}"`)}` : ''}${symbol}${text(w / 2, h - 12, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h - 20} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
+  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="12" y="${h - 28}" width="${w - 24}" height="24"/></clipPath></defs><rect width="${w}" height="${h}" rx="${Math.min(radius, w / 2, h / 2)}" fill="${palette.card}" stroke="${palette.border}"${boundary ? ' stroke-dasharray="4 3"' : ''}/>${v.showHeader === false ? '' : text(12, 18, parent ? 'PARENT' : boundary ? `${data.kind === 'inport' ? 'INPUT' : 'OUTPUT'} PORT` : data.kind.toUpperCase(), 7, `letter-spacing="0.8" fill="${palette.muted}" clip-path="url(#${clip})"`)}${parent ? `<rect x="${w - 29}" y="8" width="17" height="16" rx="3" fill="${palette.secondary}"/>${text(w - 20.5, 19, String(data.canvas?.nodes.length ?? 0), 8, `text-anchor="middle" fill="${palette.muted}"`)}` : ''}${symbol}${v.showLabel === false ? '' : text(w / 2, h - 12, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h - 20} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
 }
 export function buildScene(diagram: Diagram, pages: ExportPage[], options: ExportOptions, interactive = false): ExportScene {
   const theme = diagram.theme ?? defaultTheme; const palette = exportPalette(theme);
@@ -95,9 +101,10 @@ export function buildScene(diagram: Diagram, pages: ExportPage[], options: Expor
       const out = source?.data.ports.find(p => p.id === edge.sourceHandle), input = target?.data.ports.find(p => p.id === edge.targetHandle);
       if (!source || !target || !out || !input) return '';
       const a = handlePoint(source, out), b = handlePoint(target, input);
-      const [d] = getSmoothStepPath({ sourceX: a.x, sourceY: a.y, sourcePosition: sides[out.side], targetX: b.x, targetY: b.y, targetPosition: sides[input.side], borderRadius: 5 });
+      const settings = { route: edge.type === 'default' ? 'bezier' : 'smoothstep', ...edge.data } as FlowSettings;
+      const d = connectionPath({ sourceX: a.x, sourceY: a.y, sourcePosition: sides[out.side], targetX: b.x, targetY: b.y, targetPosition: sides[input.side] }, settings);
       wires.push({ d, x, y });
-      return `<path d="${d}" fill="none" stroke="${palette.muted}" stroke-width="1.5" marker-end="url(#arrow)"/>`;
+      return `<path d="${d}" fill="none" stroke="${settings.color ?? palette.muted}" stroke-width="${settings.width ?? 1.5}" marker-end="url(#arrow)"/>`;
     }).join('');
     const blocks = sheet.canvas.nodes.map((node, i) => renderBlock(node, `${sheet.index}-${i}`, palette, theme.radius - 1, interactive ? pages.find(p => p.path.length === sheet.path.length + 1 && p.path.slice(0, -1).every((id, j) => id === sheet.path[j]) && p.path.at(-1) === node.id)?.index : undefined)).join('');
     const title = heading ? `<text x="32" y="${yOffset + 36}" font-size="13" font-weight="600" fill="${palette.foreground}">${escapeXml(sheet.title)}</text><path d="M32 ${yOffset + 52}H${width - 32}" stroke="${palette.border}"/>` : '';
