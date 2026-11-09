@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Appearance } from '@/components/appearance';
+import { ExportDialog } from '@/components/export-dialog';
 import { Block, BlockContext } from '@/components/block-node';
 import { IconButton } from '@/components/editor-ui';
 import { Inspector } from '@/components/inspector';
@@ -59,6 +60,7 @@ function Editor() {
   const [search, setSearch] = useState('');
   const [activePort, setActivePort] = useState<string | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [json, setJson] = useState('');
   const [jsonError, setJsonError] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
@@ -234,7 +236,7 @@ function Editor() {
   const openInspector = () => { setAppearanceOpen(false); setUI(u => ({ ...u, inspector: !u.inspector, ...(window.innerWidth < 700 && !u.inspector ? { library: false } : {}) })); };
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
-      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], [role="slider"]') || jsonOpen || helpOpen) return;
+      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], [role="slider"]') || jsonOpen || helpOpen || exportOpen) return;
       const mod = event.metaKey || event.ctrlKey; const key = event.key.toLowerCase();
       if (mod && key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
       if (mod && key === 'd') { event.preventDefault(); duplicate(); }
@@ -287,7 +289,7 @@ function Editor() {
     </Card>
 
     <Card className="floating-island actions-island" role="toolbar" aria-label="Diagram actions">
-      <IconButton label="Import JSON" onClick={() => fileRef.current?.click()}><Upload/></IconButton><IconButton label="Export JSON" onClick={exportJson}><Download/></IconButton><IconButton label="JSON editor" onClick={openJson}><Braces/></IconButton><Separator orientation="vertical"/>
+      <IconButton label="Import JSON" onClick={() => fileRef.current?.click()}><Upload/></IconButton><IconButton label="Export diagram" onClick={() => setExportOpen(true)}><Download/></IconButton><IconButton label="JSON editor" onClick={openJson}><Braces/></IconButton><Separator orientation="vertical"/>
       <IconButton label="Appearance" aria-expanded={appearanceOpen} variant={appearanceOpen ? 'secondary' : 'ghost'} onClick={() => setAppearanceOpen(v => !v)}><Palette/></IconButton>
       <IconButton label={ui.inspector ? 'Collapse inspector' : 'Open inspector'} aria-expanded={ui.inspector} variant={ui.inspector && !appearanceOpen ? 'secondary' : 'ghost'} onClick={openInspector}><PanelRight/></IconButton>
     </Card>
@@ -315,8 +317,9 @@ function Editor() {
       if (file) { let text = ''; try { text = await file.text(); parseDiagram(text); importJson(text); } catch (error) { setJsonError(error instanceof Error ? error.message : 'Could not read JSON file'); setJson(text); setJsonOpen(true); } }
     }}/>
 
+    <ExportDialog open={exportOpen} onOpenChange={setExportOpen} diagram={document} path={path} notify={notify}/>
     <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
-    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Search blocks', '/'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. This editor does not run numerical simulations.</p><a className="license-link" href="/xyflow-LICENSE.txt" target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
+    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Search blocks', '/'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. This editor does not run numerical simulations.</p><a className="license-link" href="/THIRD_PARTY_NOTICES.txt" target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
     {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
   </main></BlockContext.Provider></TooltipProvider>;
 }

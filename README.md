@@ -67,6 +67,35 @@ Theme example:
 
 `canvasAt`, `updateCanvas`, `makeNode`, `serializeDiagram`, and `parseDiagram` are reusable independently from the editor.
 
+## Publishing exports
+
+Use the download icon at the top right to open the export dialog. JSON remains available there, and Cmd/Ctrl+S still exports the editable JSON source.
+
+| Format | Publishing use |
+| --- | --- |
+| HTML | A self-contained, read-only interactive viewer. Pan, zoom, and navigate parent blocks. Works offline or in an iframe. |
+| SVG | Real vector paths, shapes, and text; no HTML foreignObject, screenshots, external stylesheets, or network dependencies. |
+| PNG | A high-resolution raster image, with optional transparent background. |
+| GIF | A 24-frame, 1.92-second looping connection illustration, or a still GIF when animation is off. |
+| JSON | The complete editable system and theme, for reopening in milver. |
+
+**Current canvas** exports every block at the current level, including blocks outside the visible viewport. **Entire system** includes every nested canvas: HTML makes them navigable, while images arrange them vertically as labeled sheets. HTML defaults to Entire system. Static SVG and PNG exports show each canvas's blocks and connections; parent internals appear on their own sheet when Entire system is selected.
+
+Image exports support an optional title and dot grid. PNG and SVG can have a transparent page background; blocks keep their theme fill. PNG width options range from 800 to 4096 pixels. GIF width is capped at 1600 pixels, uses a solid background and a palette of up to 256 colors, and animates moving dots on connections for illustration, not numerical simulation. GIFs without connections export as a still image. Raster exports preserve aspect ratio; very large systems are scaled to stay within 8192 pixels in height and a 16-megapixel PNG / 2-megapixel GIF budget. The dialog shows the actual resulting dimensions.
+
+All formats use the diagram's shadcn theme. Selection borders, resize handles, editor panels, toolbars, and minimap are excluded. Image framing is independent of editor pan and zoom. Text uses standard system fonts, with no external font downloads.
+
+After a download, **Copy embed** provides either an `<img>` tag for an image or an `<iframe>` tag for HTML. Upload the file to your own website and replace `src` with its published path. For example:
+
+```html
+<img src="/diagrams/system.svg" alt="System diagram" style="max-width:100%;height:auto" loading="lazy">
+<iframe src="/diagrams/system.html" title="System diagram" width="100%" height="600" style="border:0" loading="lazy"></iframe>
+```
+
+The HTML viewer opens parent blocks by double-clicking or by focusing them and pressing Enter/Space. Breadcrumbs and Escape return to the parent. Each level retains its pan and zoom during viewing. It embeds all graphics, styles, scripts, and license notices into a single file; no React, CDN, account, or server application is needed. Websites that strip scripts can use SVG, PNG, or GIF instead.
+
+Exporting downloads files locally; it does not publish or upload anything. Export rendering lives in `src/export/scene.ts`, HTML viewing in `src/export/html.ts`, browser encoding in `src/export/download.ts`, and the shadcn dialog in `src/components/export-dialog.tsx`.
+
 ## Shortcuts
 
 | Action | Shortcut |
@@ -85,7 +114,7 @@ Shortcuts do not run while typing in fields or using a dialog, select, or slider
 
 ## Attribution
 
-React Flow is MIT licensed. The application hides its on-canvas badge using `proOptions.hideAttribution` and retains the copyright and permission notice in `THIRD_PARTY_NOTICES.txt` and the production asset `xyflow-LICENSE.txt`, linked from Help. The maintainers request supporting the project through React Flow Pro when removing the badge; see their [attribution guidance](https://reactflow.dev/remove-attribution).
+React Flow is MIT licensed. The application hides its on-canvas badge using `proOptions.hideAttribution` and retains the copyright and permission notice in `THIRD_PARTY_NOTICES.txt` and the production asset `THIRD_PARTY_NOTICES.txt`, linked from Help. The maintainers request supporting the project through React Flow Pro when removing the badge; see their [attribution guidance](https://reactflow.dev/remove-attribution).
 
 The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https://github.com/xyflow/xyflow). A reference checkout was fetched to `/tmp/reactflow-recipes-xyflow-reference` during initial development.
 
