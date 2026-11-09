@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "name": "My system",
+  "nodes": [
+    {
+      "id": "source",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 0
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Source",
+        "kind": "constant",
+        "description": "A fixed signal value",
+        "color": "#7b69db",
+        "value": "1",
+        "ports": [
+          {
+            "id": "out",
+            "name": "out",
+            "type": "output",
+            "side": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sink",
+      "type": "block",
+      "position": {
+        "x": 300,
+        "y": 0
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Destination",
+        "kind": "custom",
+        "description": "A custom block",
+        "color": "#35977c",
+        "value": "f(x)",
+        "ports": [
+          {
+            "id": "in",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "signal",
+      "source": "source",
+      "sourceHandle": "out",
+      "target": "sink",
+      "targetHandle": "in",
+      "type": "smoothstep"
+    }
+  ],
+  "viewport": {
+    "x": 80,
+    "y": 160,
+    "zoom": 1
+  }
+}
