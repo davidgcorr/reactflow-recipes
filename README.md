@@ -1,6 +1,6 @@
-# Flowbench — React Flow block editor recipe
+# milver
 
-A runnable React + TypeScript recipe using [`@xyflow/react`](https://github.com/xyflow/xyflow). The upstream repository was fetched for reference into `/tmp/reactflow-recipes-xyflow-reference`; this project consumes its published React package rather than embedding the monorepo.
+A React + TypeScript block-diagram editor built with React Flow and actual [shadcn/ui](https://ui.shadcn.com/) components. The canvas fills the browser; controls and independently collapsible panels float above it.
 
 ## Run
 
@@ -11,77 +11,82 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. `npm run build` creates the production app in `dist/`; `npm run preview` serves that build. `npm test` checks the diagram model and JSON validation.
+Open the URL Vite prints. `npm run build` creates `dist/`, `npm run preview` serves the production build, and `npm test` runs the model tests.
 
-## Use
+## Workspace
 
-- Drag a block from the library and drop it anywhere on the canvas. Clicking a library block also adds it.
-- Drag blocks to move them. Select a block to reveal four corner resize handles.
-- Use the Inspector to edit its label, displayed value, description, color, dimensions, and ports.
-- Select an input/output row in the Inspector to edit its name and choose **left, right, top, or bottom**. Multiple ports on a side are evenly distributed. Connected arrows follow moved ports.
-- Drag a filled output handle to a hollow input handle to connect blocks. Outputs support fan-out; inputs accept one connection. Self-connections and invalid directions are rejected. Feedback through different blocks is supported.
-- Scroll/pinch to zoom; hold Space and drag, use middle/right drag, or choose the hand tool to pan. In select mode, drag the background to select several blocks. Shift-click also selects multiple blocks.
-- Use the toolbar for undo/redo, snap to grid, zoom, and fit-to-view. The minimap also pans and zooms.
-- Export JSON to download a diagram, import a file, or edit and apply JSON directly with **JSON editor**. Imports are validated before modifying the canvas. A successful import can be undone.
-- Edits and viewport are automatically saved in browser local storage. Export a file for a portable copy.
+- The hamburger button opens/closes the floating block library. The top-right panel button opens/closes the inspector. Each panel also has its own close button.
+- The canvas toolbar floats at the top center. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
+- Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
+- Drag blocks to move them. Select a block to reveal four corner resize handles. The inspector edits names, values, descriptions, dimensions, and ports.
+- Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Move a port and its connections follow it.
+- Drag a filled output to a hollow input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
+- Scroll or pinch to zoom. Hold Space and drag, use the middle/right mouse button, or choose the hand tool to pan. Drag the background in selection mode to select multiple blocks.
+- Edits are saved locally in your browser. Export a JSON file for a portable copy. The importer reads the previous recipe's version-1 diagrams; previous local data is migrated without deleting the old storage entry.
 
-Shortcuts: `V` select, `H` pan, `1` fit, `Delete`/`Backspace` delete, `⌘/Ctrl+Z` undo, `⌘/Ctrl+Shift+Z` redo, `⌘/Ctrl+D` duplicate, `⌘/Ctrl+S` export. Shortcuts do not run while editing text fields.
+## Parent blocks and nested canvases
 
-This is a **diagram editor**, not a numerical simulation engine. Constant, Gain, Sum, Integrator, Scope, and Custom are editable visual block presets; no simulation results are fabricated.
+1. Add a **Parent block** from the library. It starts with an internal Input → Gain → Output example.
+2. **Double-click** it to enter its own canvas. The inspector's Enter canvas button and the block's arrow also enter it.
+3. Add **Input** and **Output** interface blocks from the library inside the parent. These entries appear only inside nested canvases.
+4. Rename an interface block to name the parent's external port. Choose **Side on parent** to position that port on the left, right, top, or bottom.
+5. Connect an Input block's output to the internal system; connect the internal system to an Output block's input.
+6. Return using the breadcrumb, back arrow, or Escape. The parent exposes exactly the interfaces defined inside it.
 
-An importable example is included at [`examples/two-blocks.json`](examples/two-blocks.json).
+Inputs and outputs remain synchronized in both directions: editing a parent's port name/side updates its internal interface block. Adding a parent's port creates the corresponding interface block inside. Deleting either removes its internal and external incident connections. Parents can contain further parents, up to 16 levels. Each canvas keeps an independent viewport. Undo/redo includes nested edits and restores the relevant canvas.
+
+`examples/parent-block.json` contains a complete connected nested controller you can import. `examples/two-blocks.json` is a minimal flat example.
+
+## shadcn theme
+
+The first workspace uses a black-and-white Neutral palette. Open the palette icon to change Light/Dark mode, choose a preset, tune **OKLCH hue and chroma**, or change corner radius. Chroma 0 is monochrome. Theme settings are saved and included in diagram JSON. Blocks, ports, floating panels, dialogs, and controls share the same semantic CSS variables. Legacy per-block `data.color` remains in the JSON for compatibility; rendering uses the workspace theme.
+
+The official shadcn CLI generated the components in `src/components/ui/`. Radix provides keyboard interactions, focus management, dialogs, collapsibles, selects, tooltips, and sliders. `components.json` configures future shadcn additions. `src/theme.ts` maps theme settings to semantic tokens.
 
 ## JSON ↔ UI
 
-`src/model.ts` defines the complete versioned JSON contract, templates, serializer, and validator. `src/App.tsx` renders the custom block and editor. `src/styles.css` styles the workspace.
+`src/model.ts` defines the versioned schema, templates, validation, serialization, and immutable canvas updates. A diagram contains `version: 1`, `name`, `nodes`, `edges`, `viewport`, and optional `theme`.
+
+Each block has `id`, `type: "block"`, `position`, `width`, `height`, and `data` with its label, kind, description, display value, legacy color, and ports. A port has `id`, `name`, `type: "input" | "output"`, and `side: "left" | "right" | "top" | "bottom"`. Edges refer to node IDs and port IDs through `source`, `sourceHandle`, `target`, and `targetHandle`.
+
+Parent blocks use `data.kind: "subsystem"` and `data.canvas: { nodes, edges, viewport }`. Their external ports correspond to `inport` and `outport` nodes in the child canvas:
+
+- The parent's port ID equals its interface block's node ID.
+- Its port name equals the interface block's `data.label`.
+- Its side comes from the interface block's `data.exposedSide`.
+- An `inport` exposes a parent input but has one output inside the canvas.
+- An `outport` exposes a parent output but has one input inside the canvas.
+
+Import validates all nested canvases, interface consistency, connections, dimensions, IDs, viewport values, and theme settings before replacing anything. Limits are 2,000 total blocks, 10,000 total connections, and 16 nested levels. Invalid imports leave the existing diagram untouched. Selection and measured DOM sizes are excluded from JSON at every nesting level.
+
+Theme example:
 
 ```json
-{
-  "version": 1,
-  "name": "My system",
-  "nodes": [
-    {
-      "id": "source",
-      "type": "block",
-      "position": { "x": 0, "y": 0 },
-      "width": 164,
-      "height": 116,
-      "data": {
-        "label": "Source",
-        "kind": "constant",
-        "description": "A fixed signal value",
-        "color": "#7b69db",
-        "value": "1",
-        "ports": [
-          { "id": "out", "name": "out", "type": "output", "side": "right" }
-        ]
-      }
-    },
-    {
-      "id": "sink",
-      "type": "block",
-      "position": { "x": 300, "y": 0 },
-      "width": 164,
-      "height": 116,
-      "data": {
-        "label": "Destination",
-        "kind": "custom",
-        "description": "A custom block",
-        "color": "#35977c",
-        "value": "f(x)",
-        "ports": [
-          { "id": "in", "name": "in", "type": "input", "side": "left" }
-        ]
-      }
-    }
-  ],
-  "edges": [
-    { "id": "signal", "source": "source", "sourceHandle": "out", "target": "sink", "targetHandle": "in", "type": "smoothstep" }
-  ],
-  "viewport": { "x": 80, "y": 160, "zoom": 1 }
-}
+{ "mode": "light", "hue": 0, "chroma": 0, "radius": 10 }
 ```
 
-IDs must be unique. Ports need unique IDs within each block. Width must be at least 120, height at least 90; viewport zoom ranges from 0.15 to 2.5. Import limits are 2,000 blocks and 10,000 connections. Connections must reference existing output and input handles. Deleting a block or port removes its incident connections. Transient selection and measurements are excluded from JSON. Background grid, resize controls, and edge routing are editor conventions, rather than per-diagram data.
+`canvasAt`, `updateCanvas`, `makeNode`, `serializeDiagram`, and `parseDiagram` are reusable independently from the editor.
 
-To add another preset, add an entry to `templates` in `src/model.ts`; the library and node creation use it automatically. `makeNode`, `serializeDiagram`, and `parseDiagram` can be reused independently by a parent application.
+## Shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| Select / pan tool | V / H |
+| Temporarily pan | Space + drag |
+| Fit canvas | 1 |
+| Search blocks | / |
+| Undo / redo | Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z |
+| Duplicate selection | Cmd/Ctrl+D |
+| Delete selection | Delete / Backspace |
+| Export JSON | Cmd/Ctrl+S |
+| Leave parent canvas | Escape |
+
+Shortcuts do not run while typing in fields or using a dialog, select, or slider.
+
+## Attribution
+
+React Flow is MIT licensed. The application hides its on-canvas badge using `proOptions.hideAttribution` and retains the copyright and permission notice in `THIRD_PARTY_NOTICES.txt` and the production asset `xyflow-LICENSE.txt`, linked from Help. The maintainers request supporting the project through React Flow Pro when removing the badge; see their [attribution guidance](https://reactflow.dev/remove-attribution).
+
+The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https://github.com/xyflow/xyflow). A reference checkout was fetched to `/tmp/reactflow-recipes-xyflow-reference` during initial development.
+
+This is a diagram editor, not a numerical simulation engine. The block presets do not execute calculations or fabricate signal results.

@@ -1,111 +1,323 @@
-import { useCallback, useEffect, useRef, useState, createContext, useContext, type CSSProperties, type DragEvent } from 'react';
-import { ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, Handle, Position, NodeResizer, MarkerType, ConnectionLineType, applyNodeChanges, applyEdgeChanges, addEdge, useReactFlow, useUpdateNodeInternals, type NodeProps, type Connection, type Edge, type OnNodesChange, type OnEdgesChange } from '@xyflow/react';
-import { ArrowUpRight, Blocks, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Copy, Download, Expand, GripVertical, Hand, Layers, Minus, MousePointer2, Plus, Redo2, Search, Settings2, Trash2, Undo2, Upload, X } from 'lucide-react';
-import { colors, exampleDiagram, makeNode, parseDiagram, serializeDiagram, templates, type BlockData, type BlockNode, type Diagram, type Port, type Side } from './model';
+import { useCallback, useEffect, useRef, useState, type DragEvent } from 'react';
+import {
+  ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, MarkerType, ConnectionLineType,
+  applyNodeChanges, applyEdgeChanges, addEdge, useReactFlow,
+  type Connection, type Edge, type OnNodesChange, type OnEdgesChange,
+} from '@xyflow/react';
+import {
+  ArrowLeft, ArrowUpRight, Braces, Check, ChevronRight, CircleHelp, Copy, Download, Expand,
+  Grid3X3, GripVertical, Hand, Home, Map, Menu, Minus, MousePointer2, Network,
+  Palette, PanelRight, Plus, Redo2, Search, Undo2, Upload, X,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { Textarea } from '@/components/ui/textarea';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Appearance } from '@/components/appearance';
+import { Block, BlockContext } from '@/components/block-node';
+import { IconButton } from '@/components/editor-ui';
+import { Inspector } from '@/components/inspector';
+import {
+  canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
+  makeNode, parseDiagram, serializeDiagram, templates, updateCanvas,
+  type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings,
+} from '@/model';
+import { themeVariables } from '@/theme';
 
-const positions = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
-const HistoryContext = createContext(() => {});
-function Block({ id, data, selected }: NodeProps<BlockNode>) {
-  const update = useUpdateNodeInternals(); const snapshot = useContext(HistoryContext);
-  useEffect(() => { update(id); }, [data.ports, id, update]);
-  const template = templates.find(t => t.kind === data.kind);
-  return <div className={`block ${selected ? 'is-selected' : ''}`} style={{ '--block-color': data.color } as CSSProperties}>
-    <NodeResizer isVisible={selected} minWidth={120} minHeight={90} color="#7b69db" onResizeStart={snapshot} />
-    <div className="block-heading"><span className="block-kind">{data.kind}</span><span className="block-dot" /></div>
-    <div className="block-symbol">{data.kind === 'gain' ? `× ${data.value}` : data.kind === 'scope' ? <svg width="58" height="29" viewBox="0 0 58 29"><path d="M1 21h9L18 6l10 17 10-12 8 7h11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" /></svg> : data.value || template?.symbol || 'f(x)'}</div>
-    <div className="block-name">{data.label}</div>
-    {data.ports.map(p => {
-      const group = data.ports.filter(other => other.side === p.side); const index = group.findIndex(other => other.id === p.id); const offset = `${(index + 1) / (group.length + 1) * 100}%`;
-      const style = p.side === 'left' || p.side === 'right' ? { top: offset } : { left: offset };
-      return <Handle key={p.id} id={p.id} type={p.type === 'input' ? 'target' : 'source'} position={positions[p.side]} style={style} className={`port port-${p.type}`} title={`${p.name} · ${p.type}`}><span className={`port-label port-label-${p.side}`}>{p.name}</span></Handle>;
-    })}
-  </div>;
-}
 const nodeTypes = { block: Block };
-const storageKey = 'flowbench.diagram.v1';
-function load(): Diagram { try { const saved = localStorage.getItem(storageKey); if (saved) return parseDiagram(saved); } catch { /* Invalid local data falls back to a valid example. */ } return exampleDiagram(); }
+const storageKey = 'milver.diagram.v1';
+const uiKey = 'milver.workspace.v1';
+type WorkspaceUI = { library: boolean; inspector: boolean; snap: boolean; minimap: boolean };
+type HistoryEntry = { json: string; path: string[] };
+function load() {
+  for (const key of [storageKey, 'flowbench.diagram.v1']) {
+    try { const json = localStorage.getItem(key); if (json) return { document: parseDiagram(json), fit: false }; } catch { /* Keep invalid saved data untouched and try the previous format. */ }
+  }
+  return { document: exampleDiagram(), fit: true };
+}
+function loadUI(): WorkspaceUI {
+  const defaults = { library: true, inspector: true, snap: true, minimap: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem(uiKey) ?? '{}');
+    return Object.fromEntries(Object.entries(defaults).map(([key, value]) => [key, typeof saved[key] === 'boolean' ? saved[key] : value])) as WorkspaceUI;
+  } catch { return defaults; }
+}
 
 function Editor() {
-  const [initial] = useState(load); const [needsFit] = useState(() => { try { return !localStorage.getItem(storageKey); } catch { return true; } }); const [nodes, setNodes] = useState(initial.nodes); const [edges, setEdges] = useState(initial.edges); const [name, setName] = useState(initial.name);
-  const [search, setSearch] = useState(''); const [mode, setMode] = useState<'select' | 'pan'>('select'); const [snap, setSnap] = useState(true); const [zoom, setZoom] = useState(initial.viewport.zoom);
-  const [jsonOpen, setJsonOpen] = useState(false); const [json, setJson] = useState(''); const [jsonError, setJsonError] = useState(''); const [help, setHelp] = useState(false); const [toast, setToast] = useState(''); const [saved, setSaved] = useState(true);
-  const [history, setHistory] = useState<{ past: string[]; future: string[] }>({ past: [], future: [] }); const [activePort, setActivePort] = useState<string | null>(null);
-  const flow = useReactFlow<BlockNode>(); const fileRef = useRef<HTMLInputElement>(null); const current = useRef({ nodes, edges, name }); current.current = { nodes, edges, name };
-  const selected = nodes.find(n => n.selected); const selectedEdge = edges.find(e => e.selected);
-  const diagram = useCallback((): Diagram => ({ version: 1, ...current.current, viewport: flow.getViewport() }), [flow]);
-  const snapshot = useCallback(() => { const state = serializeDiagram(diagram()); setHistory(h => ({ past: [...h.past.slice(-49), state], future: [] })); }, [diagram]);
-  const notify = (text: string) => setToast(text);
-  useEffect(() => { if (toast) { const timer = setTimeout(() => setToast(''), 3000); return () => clearTimeout(timer); } }, [toast]);
-  useEffect(() => { setSaved(false); const timer = setTimeout(() => { try { localStorage.setItem(storageKey, serializeDiagram(diagram())); setSaved(true); } catch { setToast('Local storage is full. Export JSON to save your work.'); } }, 450); return () => clearTimeout(timer); }, [nodes, edges, name, zoom, diagram]);
-  const restore = (d: Diagram) => { setNodes(d.nodes); setEdges(d.edges); setName(d.name); void flow.setViewport(d.viewport); setZoom(d.viewport.zoom); setActivePort(null); };
-  const undo = () => { if (!history.past.length) return; const previous = history.past.at(-1)!; setHistory(h => ({ past: h.past.slice(0, -1), future: [serializeDiagram(diagram()), ...h.future] })); restore(parseDiagram(previous)); };
-  const redo = () => { if (!history.future.length) return; const next = history.future[0]; setHistory(h => ({ past: [...h.past, serializeDiagram(diagram())], future: h.future.slice(1) })); restore(parseDiagram(next)); };
-  const onNodesChange: OnNodesChange<BlockNode> = useCallback(changes => { if (changes.some(c => c.type === 'remove')) snapshot(); setNodes(ns => applyNodeChanges(changes, ns)); }, [snapshot]);
-  const onEdgesChange: OnEdgesChange = useCallback(changes => { if (changes.some(c => c.type === 'remove')) snapshot(); setEdges(es => applyEdgeChanges(changes, es)); }, [snapshot]);
-  const validConnection = (c: Connection | Edge) => c.source !== c.target && !!nodes.find(n => n.id === c.source)?.data.ports.some(p => p.id === c.sourceHandle && p.type === 'output') && !!nodes.find(n => n.id === c.target)?.data.ports.some(p => p.id === c.targetHandle && p.type === 'input') && !edges.some(e => e.target === c.target && e.targetHandle === c.targetHandle);
-  const connect = (connection: Connection) => { if (!validConnection(connection)) return; snapshot(); setEdges(es => addEdge({ ...connection, type: 'smoothstep' }, es)); };
-  const addBlock = (kind: string, point?: { x: number; y: number }) => { snapshot(); const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 }); const node = makeNode(kind, point ?? center); if (snap) node.position = { x: Math.round(node.position.x / 20) * 20, y: Math.round(node.position.y / 20) * 20 }; setNodes(ns => [...ns.map(n => ({ ...n, selected: false })), { ...node, selected: true }]); };
-  const onDrop = (event: DragEvent) => { event.preventDefault(); const kind = event.dataTransfer.getData('application/flowbench'); if (templates.some(t => t.kind === kind)) addBlock(kind, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY })); };
-  const updateBlock = (patch: Partial<BlockData>) => { if (!selected) return; snapshot(); setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, data: { ...n.data, ...patch } } : n)); };
-  const updatePort = (id: string, patch: Partial<Port>) => { if (selected) updateBlock({ ports: selected.data.ports.map(p => p.id === id ? { ...p, ...patch } : p) }); };
-  const removePort = (id: string) => { if (!selected) return; snapshot(); setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, data: { ...n.data, ports: n.data.ports.filter(p => p.id !== id) } } : n)); setEdges(es => es.filter(e => !(e.source === selected.id && e.sourceHandle === id || e.target === selected.id && e.targetHandle === id))); };
-  const addPort = (type: Port['type']) => { if (!selected) return; const id = crypto.randomUUID(); updateBlock({ ports: [...selected.data.ports, { id, name: type === 'input' ? 'in' : 'out', type, side: type === 'input' ? 'left' : 'right' }] }); setActivePort(id); };
-  const duplicate = () => { if (!selected) return; snapshot(); const copy = structuredClone(selected); copy.id = crypto.randomUUID(); copy.position = { x: copy.position.x + 40, y: copy.position.y + 40 }; setNodes(ns => [...ns.map(n => ({ ...n, selected: false })), copy]); notify('Block duplicated'); };
-  const deleteSelection = () => { const ids = new Set(nodes.filter(n => n.selected).map(n => n.id)); if (!ids.size && !selectedEdge) return; snapshot(); setNodes(ns => ns.filter(n => !ids.has(n.id))); setEdges(es => es.filter(e => !e.selected && !ids.has(e.source) && !ids.has(e.target))); };
-  const exportJson = () => { const blob = new Blob([serializeDiagram(diagram())], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${name.trim().replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() || 'diagram'}.json`; a.click(); URL.revokeObjectURL(url); notify('Diagram exported'); };
-  const importJson = (text: string) => { try { const d = parseDiagram(text); snapshot(); restore(d); setJsonOpen(false); setJsonError(''); notify('Diagram imported'); } catch (error) { setJsonError(error instanceof Error ? error.message : 'Invalid JSON'); } };
-  const openJson = () => { setJson(serializeDiagram(diagram())); setJsonError(''); setJsonOpen(true); };
-  useEffect(() => { const keydown = (event: KeyboardEvent) => { if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"]') || jsonOpen || help) return;
-    const mod = event.metaKey || event.ctrlKey;
-    if (mod && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
-    if (mod && event.key.toLowerCase() === 'd') { event.preventDefault(); duplicate(); }
-    if (mod && event.key.toLowerCase() === 's') { event.preventDefault(); exportJson(); }
-    if (event.key.toLowerCase() === 'v' && !mod) setMode('select'); if (event.key.toLowerCase() === 'h' && !mod) setMode('pan');
-    if (event.key === 'Delete' || event.key === 'Backspace') { event.preventDefault(); deleteSelection(); }
-    if (event.key === '1' && !mod) void flow.fitView({ padding: 0.25, duration: 250 });
-  }; window.addEventListener('keydown', keydown); return () => window.removeEventListener('keydown', keydown); });
-  const port = selected?.data.ports.find(p => p.id === activePort);
-  return <HistoryContext.Provider value={snapshot}><div className="app-shell">
-    <header className="topbar">
-      <a className="brand" href="./" aria-label="Flowbench home"><span className="brand-mark"><Blocks size={21} strokeWidth={1.7} /></span>flowbench<span className="beta">BETA</span></a>
-      <div className="document-title"><span className="header-separator"/><input aria-label="Diagram name" value={name} onFocus={snapshot} onChange={e => setName(e.target.value)} /><ChevronDown size={13}/><span className="save-status"><span className={saved ? 'status-dot' : 'status-dot saving'}/>{saved ? 'Saved locally' : 'Saving…'}</span></div>
-      <div className="header-actions"><button className="button quiet json-button" onClick={openJson}><Braces size={16}/> JSON editor</button><button className="button quiet import-button" onClick={() => fileRef.current?.click()}><Upload size={15}/>Import</button><button className="button primary" onClick={exportJson}><Download size={15}/>Export JSON</button><button className="icon-button help-button" aria-label="Help and shortcuts" onClick={() => setHelp(true)}><CircleHelp size={18}/></button></div>
-    </header>
-    <div className="workspace">
-      <aside className="library">
-        <div className="panel-heading"><span>Block library</span><span className="count">06</span></div>
-        <p className="panel-description">The building blocks of your next idea.</p>
-        <div className="search-field"><Search size={15}/><input aria-label="Search blocks" placeholder="Find a block…" value={search} onChange={e => setSearch(e.target.value)}/><kbd>/</kbd></div>
-        <div className="section-label"><ChevronDown size={12}/> BASIC BLOCKS <span>{templates.filter(t => `${t.label} ${t.description}`.toLowerCase().includes(search.toLowerCase())).length}</span></div>
-        <div className="palette">{templates.filter(t => `${t.label} ${t.description}`.toLowerCase().includes(search.toLowerCase())).map(t => <button key={t.kind} className="palette-item" draggable onDragStart={e => { e.dataTransfer.setData('application/flowbench', t.kind); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind)} title={`Drag ${t.label} onto the canvas, or click to add`}><span className="palette-symbol" style={{ color: t.color, background: `${t.color}0e` }}>{t.symbol}</span><span className="palette-copy"><strong>{t.label}</strong><small>{t.description}</small></span><GripVertical size={14} className="drag-grip"/></button>)}</div>
-        {search && !templates.some(t => `${t.label} ${t.description}`.toLowerCase().includes(search.toLowerCase())) && <p className="empty-search">No blocks found. Try “gain”.</p>}
-        <div className="library-tip"><span className="tip-icon"><MousePointer2 size={16}/></span><strong>A little drag. A big idea.</strong><p>Drag a block onto the canvas.<br/>Connect the dots from there.</p><span className="tip-link">Your canvas, your possibilities <ArrowUpRight size={12}/></span></div>
-        <div className="library-footer"><span className="tiny-logo"><Layers size={14}/></span> Built with <a href="https://github.com/xyflow/xyflow" target="_blank" rel="noreferrer">React Flow <ArrowUpRight size={10}/></a></div>
-      </aside>
-      <main className={`canvas-wrap ${mode === 'pan' ? 'pan-mode' : ''}`}>
-        <div className="canvas-heading"><span className="eyebrow">WORKSPACE</span><h1>Good ideas start with a connection<span>.</span></h1><p>Build a system. See the bigger picture.</p></div>
-        <div className="floating-toolbar"><div className="tool-group"><button className={`tool ${mode === 'select' ? 'active' : ''}`} onClick={() => setMode('select')} aria-label="Select tool (V)" title="Select (V)"><MousePointer2 size={18}/><kbd>V</kbd></button><button className={`tool ${mode === 'pan' ? 'active' : ''}`} onClick={() => setMode('pan')} aria-label="Pan tool (H)" title="Pan (H)"><Hand size={18}/><kbd>H</kbd></button></div><span className="toolbar-divider"/><button className="tool" onClick={undo} disabled={!history.past.length} aria-label="Undo" title="Undo (⌘Z)"><Undo2 size={18}/></button><button className="tool" onClick={redo} disabled={!history.future.length} aria-label="Redo" title="Redo (⌘⇧Z)"><Redo2 size={18}/></button><span className="toolbar-divider"/><button className={`tool snap-tool ${snap ? 'enabled' : ''}`} onClick={() => setSnap(v => !v)} title="Toggle snap to grid" aria-label="Snap to grid" aria-pressed={snap}><svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">{[3, 9, 15].flatMap(x => [3, 9, 15].map(y => <circle key={`${x}-${y}`} cx={x} cy={y} r="1.3"/>))}</svg></button></div>
-        <ReactFlow<BlockNode> nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connect} isValidConnection={validConnection} onDrop={onDrop} onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; }} onNodeDragStart={snapshot} onSelectionDragStart={snapshot} onNodeClick={() => setActivePort(null)} onPaneClick={() => setActivePort(null)} onMoveEnd={(_, viewport) => { setZoom(viewport.zoom); try { localStorage.setItem(storageKey, serializeDiagram({ ...diagram(), viewport })); } catch { notify('Could not autosave. Export JSON to save your work.'); } }} defaultViewport={initial.viewport} minZoom={0.15} maxZoom={2.5} snapToGrid={snap} snapGrid={[20, 20]} panOnDrag={mode === 'pan' ? true : [1, 2]} selectionOnDrag={mode === 'select'} nodesDraggable={mode === 'select'} connectionLineType={ConnectionLineType.SmoothStep} defaultEdgeOptions={{ type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed, width: 17, height: 17, color: '#92919f' }, style: { stroke: '#92919f', strokeWidth: 1.5 } }} deleteKeyCode={null} fitView={needsFit} fitViewOptions={{ padding: 0.3, maxZoom: 1, minZoom: 0.4 }}>
-          <Background variant={BackgroundVariant.Dots} color="#d7d7df" gap={20} size={1}/><MiniMap className="minimap" nodeColor={n => (n.data as BlockData).color} maskColor="rgba(247,247,250,.65)" pannable zoomable ariaLabel="Diagram overview" />
-        </ReactFlow>
-        {nodes.length === 0 && <div className="empty-canvas"><Blocks size={40}/><h2>A blank canvas. Endless possibilities.</h2><p>Drag your first block from the library to get started.</p><button className="button primary" onClick={() => addBlock('custom')}><Plus size={16}/> Add a block</button></div>}
-        <div className="canvas-bottom"><span className="canvas-hint"><MousePointer2 size={13}/> Drag to select <span>·</span> Space + drag to pan <span>·</span> Scroll to zoom</span><div className="zoom-controls"><button aria-label="Zoom out" onClick={() => void flow.zoomOut({ duration: 200 })}><Minus size={15}/></button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" onClick={() => void flow.zoomIn({ duration: 200 })}><Plus size={15}/></button><span className="zoom-divider"/><button aria-label="Fit diagram to view" title="Fit to view (1)" onClick={() => void flow.fitView({ padding: 0.3, duration: 250 })}><Expand size={15}/></button></div></div>
-      </main>
-      <aside className="inspector">
-        <div className="panel-heading"><span>Inspector</span><Settings2 size={16}/></div>
-        {selected ? <><div className="selection-card"><span className="selection-symbol" style={{ color: selected.data.color, background: `${selected.data.color}10` }}>{templates.find(t => t.kind === selected.data.kind)?.symbol ?? '□'}</span><div><strong>{selected.data.label}</strong><span>{selected.data.kind} block</span></div><span className="selected-indicator"/></div>
-          <div className="inspector-section"><div className="section-label">GENERAL</div><label className="field-label">Block name<input value={selected.data.label} onChange={e => updateBlock({ label: e.target.value })}/></label><label className="field-label">{selected.data.kind === 'gain' ? 'Gain factor' : 'Display value'}<input value={selected.data.value} onChange={e => updateBlock({ value: e.target.value })} placeholder="e.g. f(x)"/></label><label className="field-label">Description<textarea rows={2} value={selected.data.description} onChange={e => updateBlock({ description: e.target.value })}/></label><div className="field-label">Block color<div className="color-picker">{colors.map(color => <button key={color} className={selected.data.color === color ? 'chosen' : ''} style={{ background: color }} aria-label={`Set color ${color}`} onClick={() => updateBlock({ color })}>{selected.data.color === color && <Check size={12}/>}</button>)}</div></div><div className="dimension-fields"><label className="field-label">Width<span><input aria-label="Block width" type="number" min="120" value={Math.round(selected.width ?? 164)} onChange={e => { const v = Number(e.target.value); if (v >= 120 && v <= 2000) { snapshot(); setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, width: v } : n)); } }}/><small>px</small></span></label><label className="field-label">Height<span><input aria-label="Block height" type="number" min="90" value={Math.round(selected.height ?? 116)} onChange={e => { const v = Number(e.target.value); if (v >= 90 && v <= 2000) { snapshot(); setNodes(ns => ns.map(n => n.id === selected.id ? { ...n, height: v } : n)); } }}/><small>px</small></span></label></div></div>
-          <div className="inspector-section ports-section"><div className="section-label">INPUTS & OUTPUTS <span>{selected.data.ports.length}</span></div><p className="field-help">Select a port to set its name and side.</p>{selected.data.ports.map(p => <div key={p.id} className={`port-row ${activePort === p.id ? 'port-row-active' : ''}`}><button className="port-select" onClick={() => setActivePort(activePort === p.id ? null : p.id)}><span className={`port-dot ${p.type}`}/><span>{p.name}</span><small>{p.side}</small><ChevronRight size={12}/></button><button className="delete-port" aria-label={`Remove port ${p.name}`} onClick={() => removePort(p.id)}><X size={12}/></button></div>)}{port && <div className="port-editor"><label className="field-label">Port name<input aria-label="Port name" value={port.name} onChange={e => updatePort(port.id, { name: e.target.value })}/></label><div className="field-label">Position<div className="side-picker">{(['left', 'top', 'bottom', 'right'] as Side[]).map(side => <button key={side} className={port.side === side ? 'active' : ''} onClick={() => updatePort(port.id, { side })}>{side}</button>)}</div></div></div>}<div className="add-ports"><button onClick={() => addPort('input')}><Plus size={13}/> Input</button><button onClick={() => addPort('output')}><Plus size={13}/> Output</button></div><p className="port-legend"><span className="port-dot input"/> Input <span className="port-dot output"/> Output</p></div>
-          <div className="inspector-section block-actions"><button className="button quiet" onClick={duplicate}><Copy size={14}/>Duplicate <kbd>⌘D</kbd></button><button className="button danger" onClick={deleteSelection}><Trash2 size={14}/>Delete block</button></div>
-        </> : selectedEdge ? <div className="inspector-section"><div className="selection-card"><ArrowUpRight size={24}/><div><strong>Connection</strong><span>Output → Input</span></div></div><p className="field-help">{nodes.find(n => n.id === selectedEdge.source)?.data.label} → {nodes.find(n => n.id === selectedEdge.target)?.data.label}</p><button className="button danger" onClick={deleteSelection}><Trash2 size={14}/>Delete connection</button></div> : <><div className="inspector-empty"><div className="empty-selection-icon"><MousePointer2 size={27} strokeWidth={1.3}/><span className="selection-corner tl"/><span className="selection-corner tr"/><span className="selection-corner bl"/><span className="selection-corner br"/></div><h2>A closer look</h2><p>Select a block on the canvas to<br/>fine-tune its properties.</p></div><div className="getting-started"><div className="section-label">MAKE YOURSELF AT HOME</div><div><span>01</span><p><strong>Drop a block</strong>Drag one from the library.</p></div><div><span>02</span><p><strong>Make a connection</strong>Drag an output to an input.</p></div><div><span>03</span><p><strong>Make it yours</strong>Resize, customize, and export.</p></div></div><div className="inspector-note"><Braces size={17}/><p>What you see is what you save.<br/><strong>Every detail lives in your JSON.</strong></p></div></>}
-        <div className="inspector-footer"><span className="status-dot"/> All changes stay on this device</div>
-      </aside>
-    </div>
-    <footer className="statusbar"><div><span className="status-dot"/> Local workspace<span className="statusbar-divider"/>{nodes.length} blocks<span className="statusbar-divider"/>{edges.length} connections</div><span>Made for connected thinking <span className="footer-spark">✳</span></span></footer>
-    <input ref={fileRef} className="hidden" type="file" accept=".json,application/json" onChange={async e => { const file = e.target.files?.[0]; if (file) { const text = await file.text(); try { parseDiagram(text); importJson(text); } catch (error) { setJson(text); setJsonError(error instanceof Error ? error.message : 'Invalid JSON'); setJsonOpen(true); } } e.target.value = ''; }}/>
-    {jsonOpen && <div className="modal-backdrop" onClick={() => setJsonOpen(false)}><section className="modal json-modal" role="dialog" aria-modal="true" aria-labelledby="json-title" onClick={e => e.stopPropagation()}><div className="modal-heading"><div><span className="eyebrow">YOUR DIAGRAM, AS DATA</span><h2 id="json-title"><Braces size={22}/> JSON editor</h2></div><button className="icon-button" aria-label="Close JSON editor" onClick={() => setJsonOpen(false)}><X size={20}/></button></div><p>Edit the source of your canvas. Apply to rebuild every block, port, and connection.</p><textarea className="json-textarea" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p role="alert" className="error-message">{jsonError}</p>}<div className="modal-footer"><button className="button quiet" onClick={() => { void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.')); }}><Copy size={15}/>Copy JSON</button><div><button className="button quiet" onClick={() => setJsonOpen(false)}>Cancel</button><button className="button primary" onClick={() => importJson(json)}><Check size={15}/>Apply to canvas</button></div></div></section></div>}
-    {help && <div className="modal-backdrop" onClick={() => setHelp(false)}><section className="modal help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onClick={e => e.stopPropagation()}><div className="modal-heading"><h2 id="help-title">A few useful shortcuts</h2><button className="icon-button" aria-label="Close help" onClick={() => setHelp(false)}><X size={20}/></button></div>{[['Select tool', 'V'], ['Pan tool', 'H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit diagram', '1'], ['Undo / redo', '⌘Z / ⌘⇧Z'], ['Duplicate block', '⌘D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘S']].map(([label, shortcut]) => <div className="shortcut" key={label}><span>{label}</span><kbd>{shortcut}</kbd></div>)}<p>Click a block to reveal its resize handles. Use the inspector to add ports and place them on any side. Outputs can connect to multiple inputs; each input accepts one signal. This recipe edits diagrams; it does not execute a simulation.</p></section></div>}
-    {toast && <div className="toast" role="status"><Check size={16}/>{toast}</div>}
-  </div></HistoryContext.Provider>;
+  const [initial] = useState(load);
+  const [document, setDocument] = useState(initial.document);
+  const [path, setPath] = useState<string[]>([]);
+  const [ui, setUI] = useState(loadUI);
+  const [appearanceOpen, setAppearanceOpen] = useState(false);
+  const [mode, setMode] = useState<'select' | 'pan'>('select');
+  const [search, setSearch] = useState('');
+  const [activePort, setActivePort] = useState<string | null>(null);
+  const [jsonOpen, setJsonOpen] = useState(false);
+  const [json, setJson] = useState('');
+  const [jsonError, setJsonError] = useState('');
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [toast, setToast] = useState('');
+  const [saved, setSaved] = useState(true);
+  const [history, setHistory] = useState<{ past: HistoryEntry[]; future: HistoryEntry[] }>({ past: [], future: [] });
+  const documentRef = useRef(document); documentRef.current = document;
+  const pathRef = useRef(path); pathRef.current = path;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const flow = useReactFlow<BlockNode>();
+  const canvas = canvasAt(document, path);
+  const nodes = canvas.nodes; const edges = canvas.edges;
+  const selected = nodes.find(n => n.selected);
+  const selectedEdge = edges.find(e => e.selected);
+  const theme = document.theme ?? defaultTheme;
+  const nested = path.length > 0;
+  const replace = useCallback((next: Diagram) => { documentRef.current = next; setDocument(next); }, []);
+  const snapshot = useCallback(() => {
+    const entry = { json: serializeDiagram(documentRef.current), path: [...pathRef.current] };
+    setHistory(h => ({ past: [...h.past.slice(-49), entry], future: [] }));
+  }, []);
+  const editCanvas = useCallback((transform: (c: Canvas) => Canvas, remember = true) => {
+    if (remember) snapshot();
+    replace(updateCanvas(documentRef.current, pathRef.current, transform));
+  }, [replace, snapshot]);
+  const notify = useCallback((message: string) => setToast(message), []);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(''), 3200); return () => clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => {
+    setSaved(false);
+    const timer = setTimeout(() => {
+      try { localStorage.setItem(storageKey, serializeDiagram(document)); setSaved(true); }
+      catch { notify('Could not save locally. Export JSON to keep a copy.'); }
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [document, notify]);
+  useEffect(() => { try { localStorage.setItem(uiKey, JSON.stringify(ui)); } catch { /* Workspace preferences are optional. */ } }, [ui]);
+  useEffect(() => {
+    const root = window.document.documentElement;
+    root.classList.toggle('dark', theme.mode === 'dark');
+    for (const [key, value] of Object.entries(themeVariables(theme))) root.style.setProperty(key, value);
+    root.style.colorScheme = theme.mode;
+  }, [theme]);
+
+  const restore = (entry: HistoryEntry) => {
+    const next = parseDiagram(entry.json); let nextPath = entry.path;
+    try { canvasAt(next, nextPath); } catch { nextPath = []; }
+    setPath(nextPath); pathRef.current = nextPath; replace(next); setActivePort(null);
+  };
+  const undo = () => {
+    if (!history.past.length) return;
+    const last = history.past.at(-1)!;
+    setHistory(h => ({ past: h.past.slice(0, -1), future: [{ json: serializeDiagram(documentRef.current), path: [...path] }, ...h.future] }));
+    restore(last);
+  };
+  const redo = () => {
+    if (!history.future.length) return;
+    const next = history.future[0];
+    setHistory(h => ({ past: [...h.past, { json: serializeDiagram(documentRef.current), path: [...path] }], future: h.future.slice(1) }));
+    restore(next);
+  };
+  const goTo = (nextPath: string[]) => {
+    // Viewports are stored per canvas; opening another level restores its own view.
+    canvasAt(documentRef.current, nextPath);
+    setPath(nextPath); pathRef.current = nextPath; setActivePort(null);
+  };
+  const enter = (id: string) => {
+    if (nodes.find(n => n.id === id)?.data.canvas) {
+      if (path.length >= 16) { notify('Maximum nesting depth is 16.'); return; }
+      goTo([...path, id]);
+    }
+  };
+  const onNodesChange: OnNodesChange<BlockNode> = useCallback(changes => {
+    editCanvas(c => ({ ...c, nodes: applyNodeChanges(changes, c.nodes) }), changes.some(c => c.type === 'remove'));
+  }, [editCanvas]);
+  const onEdgesChange: OnEdgesChange = useCallback(changes => {
+    editCanvas(c => ({ ...c, edges: applyEdgeChanges(changes, c.edges) }), changes.some(c => c.type === 'remove'));
+  }, [editCanvas]);
+  const validConnection = (connection: Connection | Edge) => {
+    const c = canvasAt(documentRef.current, pathRef.current);
+    return connection.source !== connection.target &&
+      !!c.nodes.find(n => n.id === connection.source)?.data.ports.some(p => p.id === connection.sourceHandle && p.type === 'output') &&
+      !!c.nodes.find(n => n.id === connection.target)?.data.ports.some(p => p.id === connection.targetHandle && p.type === 'input') &&
+      !c.edges.some(e => e.target === connection.target && e.targetHandle === connection.targetHandle);
+  };
+  const connect = (connection: Connection) => {
+    if (validConnection(connection)) editCanvas(c => ({ ...c, edges: addEdge({ ...connection, type: 'smoothstep' }, c.edges) }));
+  };
+  const availableTemplates = templates.filter(t => nested || t.kind !== 'inport' && t.kind !== 'outport');
+  const addBlock = (kind: string, point?: { x: number; y: number }) => {
+    if (!nested && (kind === 'inport' || kind === 'outport')) return;
+    if (kind === 'subsystem' && path.length >= 16) { notify('Maximum nesting depth is 16.'); return; }
+    const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const node = makeNode(kind, point ?? { x: center.x - 82, y: center.y - 58 });
+    if (ui.snap) node.position = { x: Math.round(node.position.x / 20) * 20, y: Math.round(node.position.y / 20) * 20 };
+    if (node.data.canvas) {
+      // Center a freshly created subsystem's internal graph without changing later saved views.
+      node.data.canvas.viewport = { x: window.innerWidth / 2 - 362, y: window.innerHeight / 2 - 158, zoom: 1 };
+    }
+    editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] }));
+  };
+  const onDrop = (event: DragEvent) => {
+    event.preventDefault(); const kind = event.dataTransfer.getData('application/milver') || event.dataTransfer.getData('application/flowbench');
+    if (availableTemplates.some(t => t.kind === kind)) addBlock(kind, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+  };
+  const updateBlock = (patch: Partial<BlockData>) => {
+    if (!selected) return;
+    editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? { ...n, data: { ...n.data, ...patch } } : n) }));
+  };
+  const resize = (dimension: 'width' | 'height', value: number) => {
+    if (!selected || value < (dimension === 'width' ? 120 : 90) || value > 2000) return;
+    editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? { ...n, [dimension]: value } : n) }));
+  };
+  const mutateSelectedPorts = (transform: (n: BlockNode) => BlockNode) => {
+    if (selected) editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? transform(n) : n) }));
+  };
+  const updatePort = (id: string, patch: Partial<Port>) => mutateSelectedPorts(n => {
+    if (n.data.canvas) {
+      const child = { ...n.data.canvas, nodes: n.data.canvas.nodes.map(b => b.id === id ? { ...b, data: { ...b.data, ...(patch.name !== undefined ? { label: patch.name } : {}), ...(patch.side ? { exposedSide: patch.side } : {}) } } : b) };
+      return { ...n, data: { ...n.data, canvas: child, ports: interfacePorts(child) } };
+    }
+    return { ...n, data: { ...n.data, ports: n.data.ports.map(p => p.id === id ? { ...p, ...patch } : p) } };
+  });
+  const removePort = (id: string) => mutateSelectedPorts(n => {
+    if (n.data.canvas) {
+      const child = cleanEdges({ ...n.data.canvas, nodes: n.data.canvas.nodes.filter(b => b.id !== id) });
+      return { ...n, data: { ...n.data, canvas: child, ports: interfacePorts(child) } };
+    }
+    return { ...n, data: { ...n.data, ports: n.data.ports.filter(p => p.id !== id) } };
+  });
+  const addPort = (type: Port['type']) => {
+    const id = crypto.randomUUID();
+    mutateSelectedPorts(n => {
+      if (n.data.canvas) {
+        const existing = n.data.canvas.nodes.filter(b => b.data.kind === (type === 'input' ? 'inport' : 'outport')).length;
+        const boundary = makeNode(type === 'input' ? 'inport' : 'outport', { x: type === 'input' ? 0 : 560, y: 100 + existing * 160 }, id);
+        boundary.data.label = `${type === 'input' ? 'Input' : 'Output'} ${existing + 1}`;
+        const child = { ...n.data.canvas, nodes: [...n.data.canvas.nodes, boundary] };
+        return { ...n, data: { ...n.data, canvas: child, ports: interfacePorts(child) } };
+      }
+      return { ...n, data: { ...n.data, ports: [...n.data.ports, { id, name: type === 'input' ? 'in' : 'out', type, side: type === 'input' ? 'left' : 'right' }] } };
+    });
+    setActivePort(id);
+  };
+  const duplicate = () => {
+    if (!selected) return;
+    const copy = structuredClone(selected); copy.id = crypto.randomUUID(); copy.position = { x: copy.position.x + 40, y: copy.position.y + 40 };
+    editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), copy] }));
+  };
+  const deleteSelection = () => {
+    const ids = new Set(nodes.filter(n => n.selected).map(n => n.id));
+    if (!ids.size && !edges.some(e => e.selected)) return;
+    editCanvas(c => ({ ...c, nodes: c.nodes.filter(n => !ids.has(n.id)), edges: c.edges.filter(e => !e.selected) }));
+  };
+  const updateTheme = (patch: Partial<ThemeSettings>) => {
+    snapshot(); replace({ ...documentRef.current, theme: { ...(documentRef.current.theme ?? defaultTheme), ...patch } });
+  };
+  const exportJson = () => {
+    const blob = new Blob([serializeDiagram(documentRef.current)], { type: 'application/json' }); const url = URL.createObjectURL(blob);
+    const anchor = window.document.createElement('a'); anchor.href = url;
+    anchor.download = `${document.name.trim().replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() || 'milver'}.json`; anchor.click();
+    URL.revokeObjectURL(url); notify('Diagram exported');
+  };
+  const importJson = (text: string) => {
+    try { const next = parseDiagram(text); snapshot(); goTo([]); replace(next); setJsonOpen(false); setJsonError(''); notify('Diagram imported'); }
+    catch (error) { setJsonError(error instanceof Error ? error.message : 'Invalid JSON'); }
+  };
+  const openJson = () => { setJson(serializeDiagram(documentRef.current)); setJsonError(''); setJsonOpen(true); };
+  const openLibrary = () => setUI(u => ({ ...u, library: !u.library, ...(window.innerWidth < 700 && !u.library ? { inspector: false } : {}) }));
+  const openInspector = () => { setAppearanceOpen(false); setUI(u => ({ ...u, inspector: !u.inspector, ...(window.innerWidth < 700 && !u.inspector ? { library: false } : {}) })); };
+  useEffect(() => {
+    const keydown = (event: KeyboardEvent) => {
+      if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], [role="slider"]') || jsonOpen || helpOpen) return;
+      const mod = event.metaKey || event.ctrlKey; const key = event.key.toLowerCase();
+      if (mod && key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
+      if (mod && key === 'd') { event.preventDefault(); duplicate(); }
+      if (mod && key === 's') { event.preventDefault(); exportJson(); }
+      if (!mod && key === 'v') setMode('select');
+      if (!mod && key === 'h') setMode('pan');
+      if (key === 'delete' || key === 'backspace') { event.preventDefault(); deleteSelection(); }
+      if (!mod && key === '1') void flow.fitView({ padding: 0.35, maxZoom: 1, duration: 200 });
+      if (!mod && key === 'escape' && nested) goTo(path.slice(0, -1));
+      if (!mod && key === '/') { event.preventDefault(); setUI(u => ({ ...u, library: true })); requestAnimationFrame(() => searchRef.current?.focus()); }
+    };
+    window.addEventListener('keydown', keydown); return () => window.removeEventListener('keydown', keydown);
+  });
+  const filteredTemplates = availableTemplates.filter(t => `${t.label} ${t.description}`.toLowerCase().includes(search.toLowerCase()));
+  const crumbs: { label: string; path: string[] }[] = [];
+  for (let index = 0; index < path.length; index++) {
+    const parent = canvasAt(document, path.slice(0, index)).nodes.find(n => n.id === path[index]);
+    crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
+  }
+
+  return <TooltipProvider delayDuration={250}><BlockContext.Provider value={{ snapshot, enter }}><main className="milver-workspace" aria-label="milver block diagram editor">
+    <ReactFlow<BlockNode>
+      nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+      onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
+      onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}
+      onNodeDragStart={snapshot} onSelectionDragStart={snapshot}
+      onNodeClick={() => setActivePort(null)} onNodeDoubleClick={(_, node) => enter(node.id)}
+      onPaneClick={() => setActivePort(null)}
+      viewport={canvas.viewport} onViewportChange={viewport => {
+        const current = canvasAt(documentRef.current, pathRef.current).viewport;
+        if (current.x !== viewport.x || current.y !== viewport.y || current.zoom !== viewport.zoom) editCanvas(c => ({ ...c, viewport }), false);
+      }}
+      minZoom={0.15} maxZoom={2.5} snapToGrid={ui.snap} snapGrid={[20, 20]}
+      panOnDrag={mode === 'pan' ? true : [1, 2]} selectionOnDrag={mode === 'select'} nodesDraggable={mode === 'select'}
+      connectionLineType={ConnectionLineType.SmoothStep} colorMode={theme.mode}
+      defaultEdgeOptions={{ type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--muted-foreground)' }, style: { stroke: 'var(--muted-foreground)', strokeWidth: 1.5 } }}
+      deleteKeyCode={null} fitView={initial.fit} fitViewOptions={{ padding: 0.35, maxZoom: 1 }} proOptions={{ hideAttribution: true }}
+    >
+      <Background variant={BackgroundVariant.Dots} color="var(--grid-color)" gap={20} size={1}/>
+      {ui.minimap && <MiniMap className="diagram-minimap" nodeColor="var(--primary)" maskColor="var(--background)" maskStrokeColor="var(--border)" pannable zoomable ariaLabel="Diagram overview"/>}
+    </ReactFlow>
+
+    <Card className="floating-island identity-island"><IconButton label={ui.library ? 'Collapse block library' : 'Open block library'} aria-expanded={ui.library} aria-controls="block-library" onClick={openLibrary}><Menu/></IconButton><Separator orientation="vertical"/><span className="wordmark">milver<span>.</span></span><span className="local-indicator" title={saved ? 'Saved locally' : 'Saving…'}><Check className={saved ? '' : 'saving'}/></span></Card>
+
+    <Card className="floating-island tools-island" role="toolbar" aria-label="Canvas tools">
+      <IconButton label="Select (V)" aria-pressed={mode === 'select'} variant={mode === 'select' ? 'secondary' : 'ghost'} onClick={() => setMode('select')}><MousePointer2/></IconButton>
+      <IconButton label="Pan (H)" aria-pressed={mode === 'pan'} variant={mode === 'pan' ? 'secondary' : 'ghost'} onClick={() => setMode('pan')}><Hand/></IconButton><Separator orientation="vertical"/>
+      <IconButton label="Undo" disabled={!history.past.length} onClick={undo}><Undo2/></IconButton><IconButton label="Redo" disabled={!history.future.length} onClick={redo}><Redo2/></IconButton><Separator orientation="vertical"/>
+      <IconButton label="Snap to grid" aria-pressed={ui.snap} variant={ui.snap ? 'secondary' : 'ghost'} onClick={() => setUI(u => ({ ...u, snap: !u.snap }))}><Grid3X3/></IconButton>
+    </Card>
+
+    <Card className="floating-island actions-island" role="toolbar" aria-label="Diagram actions">
+      <IconButton label="Import JSON" onClick={() => fileRef.current?.click()}><Upload/></IconButton><IconButton label="Export JSON" onClick={exportJson}><Download/></IconButton><IconButton label="JSON editor" onClick={openJson}><Braces/></IconButton><Separator orientation="vertical"/>
+      <IconButton label="Appearance" aria-expanded={appearanceOpen} variant={appearanceOpen ? 'secondary' : 'ghost'} onClick={() => setAppearanceOpen(v => !v)}><Palette/></IconButton>
+      <IconButton label={ui.inspector ? 'Collapse inspector' : 'Open inspector'} aria-expanded={ui.inspector} variant={ui.inspector && !appearanceOpen ? 'secondary' : 'ghost'} onClick={openInspector}><PanelRight/></IconButton>
+    </Card>
+
+    <Collapsible open={ui.library} className="left-panel-position" id="block-library"><CollapsibleContent><Card className="floating-panel library-panel" aria-label="Block library">
+      <div className="panel-header"><h2>Block library</h2><Badge variant="secondary">{availableTemplates.length}</Badge><IconButton label="Close block library" onClick={() => setUI(u => ({ ...u, library: false }))}><X/></IconButton></div><Separator/>
+      <div className="panel-scroll"><div className="library-document"><Label htmlFor="diagram-name">Diagram</Label><Input id="diagram-name" aria-label="Diagram name" value={document.name} onFocus={snapshot} onChange={e => replace({ ...documentRef.current, name: e.target.value })}/></div>
+        <div className="library-search"><Search/><Input ref={searchRef} aria-label="Search blocks" placeholder="Search blocks…" value={search} onChange={e => setSearch(e.target.value)}/><kbd>/</kbd></div>
+        {nested && <div className="nested-library-note"><Network/><span>Input and Output blocks define<br/>this parent's external ports.</span></div>}
+        <div className="palette-heading">{search ? 'Search results' : 'Blocks'}<span>Drag to canvas</span></div>
+        <div className="palette-list">{filteredTemplates.map(t => <Button key={t.kind} variant="ghost" className="palette-block" draggable onDragStart={e => { e.dataTransfer.setData('application/milver', t.kind); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind)} title={`Drag ${t.label} onto the canvas, or click to add`}><span className="palette-glyph">{t.kind === 'subsystem' ? <Network/> : t.symbol}</span><span className="palette-copy"><strong>{t.label}</strong><small>{t.description}</small></span><GripVertical className="palette-grip"/></Button>)}</div>
+        {!filteredTemplates.length && <p className="no-results">No matching blocks.</p>}
+      </div>
+      <Separator/><div className="library-footnote"><span className="port-indicator input"/>input<span className="port-indicator output"/>output<span>Drag to connect</span></div>
+    </Card></CollapsibleContent></Collapsible>
+
+    <div className="right-panel-position">{appearanceOpen ? <Appearance theme={theme} update={updateTheme} close={() => setAppearanceOpen(false)}/> : <Collapsible open={ui.inspector}><CollapsibleContent><Inspector node={selected} edge={selectedEdge} nodes={nodes} activePort={activePort} setActivePort={setActivePort} close={() => setUI(u => ({ ...u, inspector: false }))} update={updateBlock} resize={resize} updatePort={updatePort} removePort={removePort} addPort={addPort} enter={enter} duplicate={duplicate} remove={deleteSelection}/></CollapsibleContent></Collapsible>}</div>
+
+    {nested && <Card className="floating-island breadcrumbs"><IconButton label="Back to parent canvas" onClick={() => goTo(path.slice(0, -1))}><ArrowLeft/></IconButton><Separator orientation="vertical"/><Button variant="ghost" size="sm" onClick={() => goTo([])}><Home/><span>{document.name || 'Root'}</span></Button>{crumbs.map((crumb, index) => <span key={crumb.path.join('/')} className="breadcrumb-item"><ChevronRight/><Button variant="ghost" size="sm" aria-current={index === crumbs.length - 1 ? 'page' : undefined} onClick={() => goTo(crumb.path)}>{crumb.label}</Button></span>)}</Card>}
+
+    <Card className="floating-island bottom-left-island"><IconButton label="Help and shortcuts" onClick={() => setHelpOpen(true)}><CircleHelp/></IconButton><Separator orientation="vertical"/><span className="diagram-stats">{nodes.length} blocks<span>·</span>{edges.length} connections</span><span className="save-label">{saved ? 'Saved locally' : 'Saving…'}</span></Card>
+    <Card className="floating-island zoom-island"><IconButton label="Zoom out" onClick={() => void flow.zoomOut({ duration: 150 })}><Minus/></IconButton><span className="zoom-value">{Math.round(canvas.viewport.zoom * 100)}%</span><IconButton label="Zoom in" onClick={() => void flow.zoomIn({ duration: 150 })}><Plus/></IconButton><Separator orientation="vertical"/><IconButton label="Fit to view (1)" onClick={() => void flow.fitView({ padding: 0.35, maxZoom: 1, duration: 200 })}><Expand/></IconButton><IconButton label="Toggle minimap" aria-pressed={ui.minimap} onClick={() => setUI(u => ({ ...u, minimap: !u.minimap }))}><Map/></IconButton></Card>
+    <input className="sr-only" tabIndex={-1} ref={fileRef} type="file" accept=".json,application/json" aria-label="Import diagram file" onChange={async event => {
+      const file = event.target.files?.[0]; event.target.value = '';
+      if (file) { let text = ''; try { text = await file.text(); parseDiagram(text); importJson(text); } catch (error) { setJsonError(error instanceof Error ? error.message : 'Could not read JSON file'); setJson(text); setJsonOpen(true); } }
+    }}/>
+
+    <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
+    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Search blocks', '/'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. This editor does not run numerical simulations.</p><a className="license-link" href="/xyflow-LICENSE.txt" target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
+    {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
+  </main></BlockContext.Provider></TooltipProvider>;
 }
-export default function App() { return <ReactFlowProvider><Editor /></ReactFlowProvider>; }
+export default function App() { return <ReactFlowProvider><Editor/></ReactFlowProvider>; }

@@ -1,0 +1,226 @@
+{
+  "version": 1,
+  "name": "Nested controller",
+  "theme": {
+    "mode": "light",
+    "hue": 0,
+    "chroma": 0,
+    "radius": 10
+  },
+  "viewport": {
+    "x": 340,
+    "y": 240,
+    "zoom": 1
+  },
+  "nodes": [
+    {
+      "id": "source",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 80
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Constant",
+        "kind": "constant",
+        "description": "A fixed signal value",
+        "color": "#171717",
+        "value": "1",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "controller",
+      "type": "block",
+      "position": {
+        "x": 300,
+        "y": 68
+      },
+      "width": 200,
+      "height": 140,
+      "data": {
+        "label": "Controller",
+        "kind": "subsystem",
+        "description": "A canvas inside a block",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "controller-input",
+            "name": "Input",
+            "type": "input",
+            "side": "left"
+          },
+          {
+            "id": "controller-output",
+            "name": "Output",
+            "type": "output",
+            "side": "right"
+          }
+        ],
+        "canvas": {
+          "viewport": {
+            "x": 100,
+            "y": 180,
+            "zoom": 1
+          },
+          "nodes": [
+            {
+              "id": "controller-input",
+              "type": "block",
+              "position": {
+                "x": 0,
+                "y": 100
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "Input",
+                "kind": "inport",
+                "description": "Expose an input on the parent",
+                "color": "#171717",
+                "value": "",
+                "ports": [
+                  {
+                    "id": "out-0",
+                    "name": "out",
+                    "type": "output",
+                    "side": "right"
+                  }
+                ],
+                "exposedSide": "left"
+              }
+            },
+            {
+              "id": "controller-gain",
+              "type": "block",
+              "position": {
+                "x": 280,
+                "y": 100
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "Gain",
+                "kind": "gain",
+                "description": "Scale an input signal",
+                "color": "#171717",
+                "value": "2",
+                "ports": [
+                  {
+                    "id": "in-0",
+                    "name": "in",
+                    "type": "input",
+                    "side": "left"
+                  },
+                  {
+                    "id": "out-0",
+                    "name": "out",
+                    "type": "output",
+                    "side": "right"
+                  }
+                ]
+              }
+            },
+            {
+              "id": "controller-output",
+              "type": "block",
+              "position": {
+                "x": 560,
+                "y": 100
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "Output",
+                "kind": "outport",
+                "description": "Expose an output on the parent",
+                "color": "#171717",
+                "value": "",
+                "ports": [
+                  {
+                    "id": "in-0",
+                    "name": "in",
+                    "type": "input",
+                    "side": "left"
+                  }
+                ],
+                "exposedSide": "right"
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "controller-e1",
+              "source": "controller-input",
+              "target": "controller-gain",
+              "sourceHandle": "out-0",
+              "targetHandle": "in-0",
+              "type": "smoothstep"
+            },
+            {
+              "id": "controller-e2",
+              "source": "controller-gain",
+              "target": "controller-output",
+              "sourceHandle": "out-0",
+              "targetHandle": "in-0",
+              "type": "smoothstep"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "output",
+      "type": "block",
+      "position": {
+        "x": 640,
+        "y": 80
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Scope",
+        "kind": "scope",
+        "description": "A signal output endpoint",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ]
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "source",
+      "target": "controller",
+      "sourceHandle": "out-0",
+      "targetHandle": "controller-input",
+      "type": "smoothstep"
+    },
+    {
+      "id": "e2",
+      "source": "controller",
+      "target": "output",
+      "sourceHandle": "controller-output",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    }
+  ]
+}
