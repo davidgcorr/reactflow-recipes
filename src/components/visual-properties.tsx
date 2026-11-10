@@ -6,13 +6,14 @@ import { Field } from './editor-ui';
 import { moduleRecipes } from '@/module-recipes';
 import { defaultModule, type BlockData, type BlockNode, type BlockVisuals, type FlowSettings } from '@/model';
 export function ModuleEditor({ node, update }: { node: BlockNode; update: (patch: Partial<BlockData>) => void }) {
-  const source = node.data.module ?? defaultModule;
+  const python = node.data.kind === 'python';
+  const source = node.data.module ?? (python ? '' : defaultModule);
   const [draft, setDraft] = useState(source);
   useEffect(() => setDraft(source), [node.id, source]);
-  return <><Field label="Mask ES module"><Textarea className="module-editor" aria-label="Mask ES module" spellCheck={false} value={draft} onChange={e => setDraft(e.target.value)}/></Field>
-    <div className="recipe-buttons">{Object.entries(moduleRecipes).map(([label, code]) => <Button size="sm" variant="outline" key={label} onClick={() => setDraft(code)}>{label}</Button>)}</div>
-    <Button size="sm" disabled={draft === source} onClick={() => update({ module: draft })}>Apply module</Button>
-    <p className="field-help">Export default mount(&#123; element, inputs, value, emit &#125;). Inputs use port IDs. Return a cleanup function or &#123; update(inputs, value), destroy() &#125;. CDN examples need internet access.</p></>;
+  return <><Field label={python ? "Python source" : "Mask ES module"}><Textarea className="module-editor" aria-label={python ? "Python source" : "Mask ES module"} spellCheck={false} value={draft} onChange={e => setDraft(e.target.value)}/></Field>
+    {!python && <div className="recipe-buttons">{Object.entries(moduleRecipes).map(([label, code]) => <Button size="sm" variant="outline" key={label} onClick={() => setDraft(code)}>{label}</Button>)}</div>}
+    <Button size="sm" disabled={draft === source} onClick={() => update({ module: draft })}>{python ? 'Apply code' : 'Apply module'}</Button>
+    {python ? <p className="field-help">Python source is saved with the diagram for use with your own runtime. Python does not execute in this editor.</p> : <p className="field-help">Export default mount(&#123; element, inputs, value, emit &#125;). Inputs use port IDs. Return a cleanup function or &#123; update(inputs, value), destroy() &#125;. CDN examples need internet access.</p>}</>;
 }
 export function VisualProperties({ node, update, resize }: { node: BlockNode; update: (patch: Partial<BlockData>) => void; resize: (dimension: 'width' | 'height', value: number) => void }) {
   const v = node.data.visuals ?? {};
@@ -23,8 +24,8 @@ export function VisualProperties({ node, update, resize }: { node: BlockNode; up
     <Button variant="outline" size="sm" onClick={() => update({ visuals: { ...v, background: undefined, foreground: undefined } })}>Use theme colors</Button>
     <div className="dimension-fields">{(['width', 'height'] as const).map(d => <Field key={d} label={d === 'width' ? 'Width (px)' : 'Height (px)'}><Input type="number" aria-label={`Block ${d}`} min={d === 'width' ? 120 : 90} max={2000} value={node[d] ?? (d === 'width' ? 164 : 116)} onChange={e => resize(d, Number(e.target.value))}/></Field>)}</div>
     <Field label="Corner radius"><Input aria-label="Block corner radius" type="number" min={0} max={60} value={v.radius ?? 9} onChange={e => change({ radius: Math.max(0, Math.min(60, Number(e.target.value))) })}/></Field>
-    {([['showHeader', 'Type header'], ['showLabel', 'Block label'], ['showValue', 'Mask content'], ['showPortLabels', 'Port labels']] as const).map(([key, label]) => <label className="visibility-option" key={key}><span>{label}</span><input type="checkbox" checked={v[key] !== false} onChange={e => change({ [key]: e.target.checked })}/></label>)}
-    {node.data.kind === 'javascript' && <ModuleEditor node={node} update={update}/>}
+    {([['showHeader', 'Type breadcrumb'], ['showLabel', 'Block label'], ['showValue', 'Mask content'], ['showPortLabels', 'Port names on hover']] as const).map(([key, label]) => <label className="visibility-option" key={key}><span>{label}</span><input type="checkbox" checked={v[key] !== false} onChange={e => change({ [key]: e.target.checked })}/></label>)}
+    {(node.data.kind === 'javascript' || node.data.kind === 'python') && <ModuleEditor node={node} update={update}/>}
   </section>;
 }
 export function ConnectionProperties({ settings, update }: { settings: FlowSettings; update: (patch: FlowSettings) => void }) {

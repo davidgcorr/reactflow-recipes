@@ -16,6 +16,20 @@ describe('publication exports', () => {
     expect(svg).not.toContain('Inspector'); expect(svg).not.toContain('localStorage');
     expect(scene.wires).toHaveLength(4);
   });
+  it('places block labels below the border and exports collapsible type settings', () => {
+    const d = exampleDiagram();
+    d.nodes = [makeNode('constant', { x: 0, y: 0 }, 'only')]; d.edges = [];
+    const render = () => buildScene(d, collectPages(d, [], 'current'), options);
+    const expanded = render();
+    expect(expanded.body).toContain('gens › constant');
+    expect(expanded.body).toContain('M0 25H164');
+    expect(expanded.body).toContain('y="136" font-size="10"');
+    d.nodes[0].data.visuals = { showHeader: false, showLabel: false };
+    const hidden = render();
+    expect(hidden.body).not.toContain('gens › constant');
+    expect(hidden.body).not.toContain('y="136" font-size="10"');
+    expect(expanded.height - hidden.height).toBe(28);
+  });
   it('maps ports to the same evenly-spaced positions used in the editor', () => {
     const node = makeNode('sum', { x: -40, y: 60 });
     expect(handlePoint(node, node.data.ports[0])).toEqual({ x: -40, y: 60 + 116 / 3 });

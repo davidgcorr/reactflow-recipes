@@ -13,10 +13,10 @@ import { Field, IconButton, SideSelect } from './editor-ui';
 import { isInterface, type BlockData, type BlockNode, type Port, type FlowSettings } from '@/model';
 import type { Edge } from '@xyflow/react';
 
-export function Inspector({ node, edge, nodes, activePort, setActivePort, close, update, resize, updatePort, removePort, addPort, enter, duplicate, remove, updateEdge }: {
+export function Inspector({ node, edge, nodes, activePort, setActivePort, update, resize, updatePort, removePort, addPort, enter, duplicate, remove, updateEdge }: {
   updateEdge: (patch: FlowSettings) => void;
   node?: BlockNode; edge?: Edge; nodes: BlockNode[]; activePort: string | null;
-  setActivePort: (id: string | null) => void; close: () => void;
+  setActivePort: (id: string | null) => void;
   update: (patch: Partial<BlockData>) => void; resize: (dimension: 'width' | 'height', value: number) => void;
   updatePort: (id: string, patch: Partial<Port>) => void; removePort: (id: string) => void;
   addPort: (type: Port['type']) => void; enter: (id: string) => void; duplicate: () => void; remove: () => void;
@@ -24,7 +24,7 @@ export function Inspector({ node, edge, nodes, activePort, setActivePort, close,
   const preview = useContext(PreviewContext).values;
   const [tab, setTab] = useState<'logic' | 'visuals'>('logic');
   const parent = node?.data.kind === 'subsystem'; const boundary = node && isInterface(node);
-  return <Card className="floating-panel inspector-panel" aria-label="Inspector"><div className="panel-header"><h2>Inspector</h2><IconButton label="Collapse inspector" onClick={close}><X/></IconButton></div><Separator/>
+  return <Card className="floating-panel inspector-panel" aria-label="Inspector">
     <div className="panel-scroll">
       {node ? <>
         <div className="selection-heading"><span className="selection-icon">{parent ? <Network/> : boundary ? <ArrowUpRight/> : <Scan/>}</span><div><strong>{node.data.label || 'Untitled block'}</strong><span>{parent ? 'Nested canvas' : boundary ? 'Parent interface' : `${node.data.kind} block`}</span></div><Badge variant="outline">{parent ? 'Parent' : boundary ? 'Port' : 'Block'}</Badge></div>
@@ -35,6 +35,7 @@ export function Inspector({ node, edge, nodes, activePort, setActivePort, close,
           {!parent && !boundary && <Field label={node.data.kind === 'gain' ? 'Gain factor' : node.data.kind === 'constant' ? 'Constant value' : node.data.kind === 'javascript' ? 'Fallback value' : 'Parameter'}><Input aria-label="Display value" value={node.data.value} onChange={e => update({ value: e.target.value })}/></Field>}
           <Field label="Description"><Textarea aria-label="Block description" rows={2} value={node.data.description} onChange={e => update({ description: e.target.value })}/></Field>
 
+          {node.data.kind === 'python' && <p className="field-help">Edit Python source in Visuals. Source is saved for your own runtime; Python does not execute here.</p>}
           {node.data.kind === 'javascript' && <Field label="Live inputs → outputs"><pre className="signal-preview">{JSON.stringify(preview[node.id] ?? {}, null, 2)}</pre><p className="field-help">Use these port IDs in your module. Edit its source in Visuals.</p></Field>}
         </section>
         <Separator/>

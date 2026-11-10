@@ -1,6 +1,7 @@
+import { portOffset } from '../ports';
 import { connectionPath } from '../connections';
 import { Position } from '@xyflow/react';
-import { canvasAt, defaultTheme, type BlockNode, type Canvas, type Diagram, type Port, type Side, type ThemeSettings, type FlowSettings } from '../model';
+import { blockTypePath, canvasAt, defaultTheme, type BlockNode, type Canvas, type Diagram, type Port, type Side, type ThemeSettings, type FlowSettings } from '../model';
 import { themeVariables } from '../theme';
 
 export type ExportFormat = 'html' | 'svg' | 'png' | 'gif' | 'json';
@@ -49,8 +50,7 @@ export function collectPages(diagram: Diagram, path: string[], scope: ExportOpti
   return pages;
 }
 export function handlePoint(node: BlockNode, port: Port) {
-  const group = node.data.ports.filter(p => p.side === port.side);
-  const fraction = (group.findIndex(p => p.id === port.id) + 1) / (group.length + 1);
+  const fraction = portOffset(node.data.ports, port);
   const w = node.width ?? 164, h = node.height ?? 116;
   return { x: node.position.x + (port.side === 'left' ? 0 : port.side === 'right' ? w : w * fraction), y: node.position.y + (port.side === 'top' ? 0 : port.side === 'bottom' ? h : h * fraction) };
 }
@@ -58,7 +58,7 @@ function canvasBounds(canvas: Canvas) {
   if (!canvas.nodes.length) return { x: 0, y: 0, width: 512, height: 200 };
   const x = Math.min(...canvas.nodes.map(n => n.position.x)), y = Math.min(...canvas.nodes.map(n => n.position.y));
   const width = Math.max(...canvas.nodes.map(n => n.position.x + (n.width ?? 164))) - x;
-  const height = Math.max(...canvas.nodes.map(n => n.position.y + (n.height ?? 116))) - y;
+  const height = Math.max(...canvas.nodes.map(n => n.position.y + (n.height ?? 116) + (n.data.visuals?.showLabel === false ? 0 : 28))) - y;
   if (![x, y, width, height].every(Number.isFinite) || Math.max(width, height) > 10_000_000) throw new Error('This diagram is too spread out to export. Move the blocks closer together.');
   return { x, y, width, height };
 }
@@ -68,6 +68,7 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
   radius = v.radius ?? radius;
   const w = node.width ?? 164, h = node.height ?? 116;
   const parent = data.kind === 'subsystem', boundary = data.kind === 'inport' || data.kind === 'outport';
+  const typePath = blockTypePath(data.kind).join(' › ');
   const clip = `block-${index}`; const textClip = `label-${index}`;
   const text = (x: number, y: number, value: string, size: number, attrs = '') => `<text x="${x}" y="${y}" font-size="${size}" ${attrs}>${escapeXml(value)}</text>`;
   let symbol: string;
@@ -75,6 +76,7 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
     symbol = `<g transform="translate(${w / 2 - 45} ${h / 2 - 13})" fill="${palette.secondary}" stroke="${palette.primary}"><path d="M24 10h42" fill="none"/>${[0, 34, 68].map(x => `<rect x="${x}" y="0" width="22" height="20" rx="3"/>`).join('')}</g>`;
   } else if (data.kind === 'scope') symbol = `<path d="M-27 6h8l8-15 10 17 10-12 8 7h10" transform="translate(${w / 2} ${h / 2})" fill="none" stroke="${palette.primary}" stroke-width="1.5" stroke-linejoin="round"/>`;
   else symbol = text(w / 2, h / 2 + 8, boundary ? data.kind === 'inport' ? '↳' : '↗' : data.kind === 'gain' ? `× ${data.value}` : data.value || 'ƒ', 29, `text-anchor="middle" fill="${palette.primary}" font-family="Georgia,serif" clip-path="url(#${clip})"`);
+  if (data.kind === 'python') symbol = text(w / 2, h / 2 + 8, 'Python code', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (data.kind === 'javascript') symbol = text(w / 2, h / 2 + 8, 'JS module', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (v.showValue === false) symbol = '';
   const ports = data.ports.map(port => {
@@ -83,7 +85,7 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
     return `<circle cx="${x}" cy="${y}" r="5.5" fill="${palette.card}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/><circle cx="${x}" cy="${y}" r="2.5" fill="${port.type === 'input' ? palette.card : palette.primary}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/>` + (v.showPortLabels === false ? '' : text(left ? x + 12 : right ? x - 12 : x, left || right ? y + 2 : top ? y + 17 : y - 11, port.name, 7, `text-anchor="${left ? 'start' : right ? 'end' : 'middle'}" fill="${palette.muted}" clip-path="url(#${clip})"`));
   }).join('');
   const interactive = destination === undefined ? '' : ` data-enter="${destination}" role="button" tabindex="0" aria-label="${escapeXml(`Enter ${data.label}`)}" style="cursor:pointer"`;
-  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="12" y="${h - 28}" width="${w - 24}" height="24"/></clipPath></defs><rect width="${w}" height="${h}" rx="${Math.min(radius, w / 2, h / 2)}" fill="${palette.card}" stroke="${palette.border}"${boundary ? ' stroke-dasharray="4 3"' : ''}/>${v.showHeader === false ? '' : text(12, 18, parent ? 'PARENT' : boundary ? `${data.kind === 'inport' ? 'INPUT' : 'OUTPUT'} PORT` : data.kind.toUpperCase(), 7, `letter-spacing="0.8" fill="${palette.muted}" clip-path="url(#${clip})"`)}${parent ? `<rect x="${w - 29}" y="8" width="17" height="16" rx="3" fill="${palette.secondary}"/>${text(w - 20.5, 19, String(data.canvas?.nodes.length ?? 0), 8, `text-anchor="middle" fill="${palette.muted}"`)}` : ''}${symbol}${v.showLabel === false ? '' : text(w / 2, h - 12, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h - 20} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
+  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="12" y="${h + 4}" width="${w - 24}" height="24"/></clipPath></defs><rect width="${w}" height="${h}" rx="${Math.min(radius, w / 2, h / 2)}" fill="${palette.card}" stroke="${palette.border}"${boundary ? ' stroke-dasharray="4 3"' : ''}/>${v.showHeader === false ? '' : `<path d="M0 25H${w}" stroke="${palette.border}"/>` + text(10, 16, typePath, 8, `opacity="0.65" fill="${palette.muted}" clip-path="url(#${clip})"`)}${symbol}${v.showLabel === false ? '' : text(w / 2, h + 20, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h + 10} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
 }
 export function buildScene(diagram: Diagram, pages: ExportPage[], options: ExportOptions, interactive = false): ExportScene {
   const theme = diagram.theme ?? defaultTheme; const palette = exportPalette(theme);

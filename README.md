@@ -32,11 +32,13 @@ Open `http://localhost:4173/reactflow-recipes/`.
 
 ## Workspace
 
-- The hamburger button opens/closes the floating block library. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Each panel also has its own close button.
-- Canvas tools float at the bottom; the canvas hierarchy stays at the top, including the root canvas. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
+- The project title can be edited beside the milver wordmark at the top left.
+- The top-left button opens/closes the floating block library. Collapsible Generators & datatypes, JavaScript code blocks, and Python code blocks categories show compact icon tiles. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Each panel also has its own close button.
+- Canvas tools float at the bottom; the canvas hierarchy shows a home icon at the top and parent block names inside nested canvases. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
 - Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
-- Drag blocks to move them. Select a block to reveal four corner resize handles. The inspector has **Logic** (names, values, descriptions, ports) and **Visuals** (fill, ink, dimensions, radius, visibility, and module source) tabs.
-- Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Move a port and its connections follow it.
+- Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Logic** (names, values, descriptions, ports) and **Visuals** (fill, ink, dimensions, radius, visibility, and module source) tabs.
+- Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed by clicking it and restored using the chevron on hover or **Visuals → Type breadcrumb**.
+- Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Hover over a port for one second, then drag the small grip beside it to move it along any border; drag the circular port itself to connect wires. Focus a grip and use arrow keys for fine adjustment. Ports magnetize to the center and evenly spaced positions on their destination border. Port names appear only while hovering over that port. Custom positions, including parent interfaces, are saved in JSON and used in exports. Move a port and its connections follow it.
 - Ports use concentric circles: outputs have a filled core, inputs have hollow blue rings. Drag an output to an input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
 - Scroll or pinch to zoom. Hold Space and drag, use the middle/right mouse button, or choose the hand tool to pan. Drag the background in selection mode to select multiple blocks.
 - Edits are saved locally in your browser. Export a JSON file for a portable copy. The importer reads the previous recipe's version-1 diagrams; previous local data is migrated without deleting the old storage entry.
@@ -120,7 +122,6 @@ Exporting downloads files locally; it does not publish or upload anything. Expor
 | Select / pan tool | V / H |
 | Temporarily pan | Space + drag |
 | Fit canvas | 1 |
-| Search blocks | / |
 | Undo / redo | Cmd/Ctrl+Z / Cmd/Ctrl+Shift+Z |
 | Duplicate selection | Cmd/Ctrl+D |
 | Delete selection | Delete / Backspace |

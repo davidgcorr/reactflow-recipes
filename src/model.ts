@@ -1,7 +1,7 @@
 import type { Edge, Node, Viewport } from '@xyflow/react';
 
 export type Side = 'left' | 'right' | 'top' | 'bottom';
-export type Port = { id: string; name: string; type: 'input' | 'output'; side: Side };
+export type Port = { id: string; name: string; type: 'input' | 'output'; side: Side; offset?: number };
 export type ThemeSettings = { mode: 'light' | 'dark'; hue: number; chroma: number; radius: number };
 export type BlockVisuals = { background?: string; foreground?: string; showHeader?: boolean; showLabel?: boolean; showValue?: boolean; showPortLabels?: boolean; radius?: number };
 export type FlowSettings = { route?: 'smoothstep' | 'bezier'; points?: { x: number; y: number }[]; animation?: 'none' | 'dash' | 'pulse'; speed?: number; reverse?: boolean; color?: string; width?: number };
@@ -12,6 +12,7 @@ export type BlockData = {
   module?: string;
   canvas?: Canvas;
   exposedSide?: Side;
+  exposedOffset?: number;
 };
 export type BlockNode = Node<BlockData, 'block'>;
 export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings };
@@ -26,10 +27,16 @@ export const templates = [
   { kind: 'scope', label: 'Scope', description: 'A signal output endpoint', symbol: '⌁', value: '', inputs: 1, outputs: 0 },
   { kind: 'custom', label: 'Custom block', description: 'Define your own block', symbol: 'ƒ', value: 'f(x)', inputs: 1, outputs: 1 },
   { kind: 'javascript', label: 'JS module', description: 'A programmable, input-driven mask', symbol: 'JS', value: '1', inputs: 1, outputs: 1 },
+  { kind: 'python', label: 'Python code', description: 'Editable Python source for your own runtime', symbol: 'Py', value: '', inputs: 1, outputs: 1 },
   { kind: 'subsystem', label: 'Parent block', description: 'A canvas inside a block', symbol: '⊞', value: '', inputs: 1, outputs: 1 },
   { kind: 'inport', label: 'Input', description: 'Expose an input on the parent', symbol: '→', value: '', inputs: 0, outputs: 1 },
   { kind: 'outport', label: 'Output', description: 'Expose an output on the parent', symbol: '→', value: '', inputs: 1, outputs: 0 },
 ];
+export function blockTypePath(kind: string): [string, string] {
+  const category = kind === 'javascript' || kind === 'python' ? 'code' : kind === 'subsystem' ? 'canvas' : kind === 'inport' || kind === 'outport' ? 'ports' : 'gens';
+  const label = kind === 'subsystem' ? 'parent' : kind === 'inport' ? 'input' : kind === 'outport' ? 'output' : kind;
+  return [category, label];
+}
 export const defaultModule = `export default function mount({ element, inputs, value, emit }) {
   const signal = inputs['in-0'] ?? Number(value);
   element.textContent = 'JS · ' + signal;
@@ -38,7 +45,7 @@ export const defaultModule = `export default function mount({ element, inputs, v
 }`;
 export const isInterface = (node: BlockNode) => node.data.kind === 'inport' || node.data.kind === 'outport';
 export function interfacePorts(canvas: Canvas): Port[] {
-  return canvas.nodes.filter(isInterface).map(n => ({ id: n.id, name: n.data.label, type: n.data.kind === 'inport' ? 'input' : 'output', side: n.data.exposedSide ?? (n.data.kind === 'inport' ? 'left' : 'right') }));
+  return canvas.nodes.filter(isInterface).map(n => ({ id: n.id, name: n.data.label, type: n.data.kind === 'inport' ? 'input' : 'output', side: n.data.exposedSide ?? (n.data.kind === 'inport' ? 'left' : 'right'), ...(n.data.exposedOffset !== undefined ? { offset: n.data.exposedOffset } : {}) }));
 }
 export function makeNode(kind: string, position: { x: number; y: number }, id: string = crypto.randomUUID()): BlockNode {
   const t = templates.find(t => t.kind === kind) ?? templates[5];
@@ -48,6 +55,9 @@ export function makeNode(kind: string, position: { x: number; y: number }, id: s
   ];
   const node: BlockNode = { id, type: 'block', position, width: kind === 'subsystem' ? 200 : 164, height: kind === 'subsystem' ? 140 : 116, data: { label: t.label, kind: t.kind, description: t.description, color: '#171717', value: t.value, ports } };
   if (kind === 'javascript') { node.width = 240; node.height = 190; node.data.module = defaultModule; }
+  if (kind === 'python') { node.width = 240; node.height = 190; node.data.module = `def process(inputs, value):
+    return inputs.get('in-0', value)
+`; }
   if (kind === 'inport' || kind === 'outport') node.data.exposedSide = kind === 'inport' ? 'left' : 'right';
   if (kind === 'subsystem') {
     const input = makeNode('inport', { x: 0, y: 100 }, `${id}-input`);
@@ -114,10 +124,11 @@ export function parseDiagram(json: string): Diagram {
       const portIds = new Set<string>(); const ports: Port[] = [];
       for (const p of b.ports) {
         if (!record(p) || typeof p.id !== 'string' || !p.id || portIds.has(p.id) || typeof p.name !== 'string' || !['input', 'output'].includes(String(p.type)) || !isSide(p.side)) throw new Error(`Invalid or duplicate port in block ${n.id}.`);
-        portIds.add(p.id); ports.push({ id: p.id, name: p.name, type: p.type as Port['type'], side: p.side });
+        if (p.offset !== undefined && (!finite(p.offset) || p.offset < 0 || p.offset > 1)) throw new Error('Invalid port offset.');
+        portIds.add(p.id); ports.push({ id: p.id, name: p.name, type: p.type as Port['type'], side: p.side, ...(p.offset !== undefined ? { offset: p.offset } : {}) });
       }
       const data: BlockData = { label: b.label as string, kind: b.kind as string, description: b.description as string, color: b.color as string, value: b.value as string, ports };
-      if (b.module !== undefined) { if (typeof b.module !== 'string' || b.module.length > 100000) throw new Error('Invalid JS module.'); data.module = b.module; }
+      if (b.module !== undefined) { if (typeof b.module !== 'string' || b.module.length > 100000) throw new Error('Invalid code module.'); data.module = b.module; }
       if (b.visuals !== undefined) {
         if (!record(b.visuals)) throw new Error('Invalid block visuals.');
         const v = b.visuals;
@@ -126,6 +137,7 @@ export function parseDiagram(json: string): Diagram {
         if (v.radius !== undefined && (!finite(v.radius) || v.radius < 0 || v.radius > 60)) throw new Error('Invalid block radius.');
         data.visuals = Object.fromEntries(['background', 'foreground', 'showHeader', 'showLabel', 'showValue', 'showPortLabels', 'radius'].filter(k => v[k] !== undefined).map(k => [k, v[k]]));
       }
+      if (b.exposedOffset !== undefined) { if (!finite(b.exposedOffset) || b.exposedOffset < 0 || b.exposedOffset > 1) throw new Error('Invalid exposed port offset.'); data.exposedOffset = b.exposedOffset; }
       if (b.exposedSide !== undefined) { if (!isSide(b.exposedSide)) throw new Error('Invalid exposed port side.'); data.exposedSide = b.exposedSide; }
       if ((b.kind === 'inport' || b.kind === 'outport') && depth === 0) throw new Error('Input and Output interface blocks belong inside a parent block.');
       if (b.kind === 'inport' || b.kind === 'outport') {
@@ -136,7 +148,7 @@ export function parseDiagram(json: string): Diagram {
         if (!b.canvas) throw new Error(`Parent block ${n.id} needs an internal canvas.`);
         data.canvas = parseCanvas(b.canvas, depth + 1);
         const defined = interfacePorts(data.canvas);
-        if (defined.length !== ports.length || defined.some(p => !ports.some(q => q.id === p.id && q.name === p.name && q.side === p.side && q.type === p.type))) throw new Error(`Parent block ${n.id} ports must match its internal Input and Output blocks.`);
+        if (defined.length !== ports.length || defined.some(p => !ports.some(q => q.id === p.id && q.name === p.name && q.side === p.side && q.type === p.type && q.offset === p.offset))) throw new Error(`Parent block ${n.id} ports must match its internal Input and Output blocks.`);
       } else if (b.canvas !== undefined) throw new Error('Only parent blocks can contain a canvas.');
       ids.add(n.id); nodes.push({ id: n.id, type: 'block', position: { x: n.position.x, y: n.position.y }, width: n.width, height: n.height, data });
     }
