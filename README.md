@@ -36,8 +36,8 @@ Open `http://localhost:4173/reactflow-recipes/`.
 - The top-left button opens/closes the floating block library. Collapsible Generators & datatypes, JavaScript code blocks, and Python code blocks categories show compact icon tiles. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Each panel also has its own close button.
 - Canvas tools float at the bottom; the canvas hierarchy shows a home icon at the top and parent block names inside nested canvases. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
 - Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
-- Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Logic** (names, values, descriptions, ports) and **Visuals** (fill, ink, dimensions, radius, visibility, and module source) tabs.
-- Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed by clicking it and restored using the chevron on hover or **Visuals → Type breadcrumb**.
+- Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Properties** (names, values, descriptions, ports), **Visuals** (fill, ink, dimensions, radius, visibility), and **Code** (JavaScript/Python source, port mappings, module imports) tabs.
+- Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed with its chevron and restored using the chevron on hover or **Visuals → Type breadcrumb**.
 - Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Hover over a port for one second, then drag the small grip beside it to move it along any border; drag the circular port itself to connect wires. Focus a grip and use arrow keys for fine adjustment. Ports magnetize to the center and evenly spaced positions on their destination border. Port names appear only while hovering over that port. Custom positions, including parent interfaces, are saved in JSON and used in exports. Move a port and its connections follow it.
 - Ports use concentric circles: outputs have a filled core, inputs have hollow blue rings. Drag an output to an input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
 - Scroll or pinch to zoom. Hold Space and drag, use the middle/right mouse button, or choose the hand tool to pan. Drag the background in selection mode to select multiple blocks.
@@ -136,27 +136,40 @@ React Flow is MIT licensed. The application hides its on-canvas badge using `pro
 
 The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https://github.com/xyflow/xyflow). A reference checkout was fetched to `/tmp/reactflow-recipes-xyflow-reference` during initial development.
 
-This is a diagram editor, not a numerical simulation engine. The block presets do not execute calculations or fabricate signal results.
+This is a diagram editor, not a numerical simulation engine. Constants, gains, sums, and JavaScript recipes provide live value previews. Integrators and other simulation placeholders do not simulate a numerical system.
 
 ## Programmable JS masks
 
-Add **JS module** from the library, then select **Visuals**. Choose a DOM, LaTeX, or Three.js recipe, edit the source, and click **Apply module**. The module renders inside the block mask, in an iframe with `sandbox="allow-scripts"` and an opaque origin. It cannot access the editor DOM or local storage. CDN imports require an internet connection; the DOM recipe works offline. Three.js requires WebGL. The LaTeX recipe uses [KaTeX](https://katex.org/docs/api); the 3D recipe follows [Three.js scene setup](https://threejs.org/manual/pages/creating-a-scene.html).
+The library contains **JavaScript datatypes** (Number, Boolean, String, Vector, Matrix, Tensor), **JavaScript sources** (Clock, Trigger, Slider, Selector, Button), and **JavaScript code blocks** (DOM, LaTeX, Three.js, WebAssembly). Select a block and open **Code** to edit source, import a `.js`/`.mjs` file, map ports to named variables, or add module dependencies. Python uses the same source editor and stores code without executing it.
+
+Drag a code block by its header or mask to move it; click to select it. Click **Interact** to operate a slider, selector, button, or custom mask, then **Done** to return to dragging. The small header chevron collapses the type breadcrumb. Snap guides appear while a port is magnetized to an alignment position.
 
 ```js
-export default function mount({ element, inputs, value, emit }) {
-  function update(inputs, value) {
-    const x = Number(inputs['in-0'] ?? value);
-    element.textContent = `Value: ${x}`;
-    emit(x * 2, 'out-0');
+export default function mount({ element, inputs, variables, value, emit, setValue, modules }) {
+  function update(inputs, value, variables) {
+    // Map an input to "signal" and an output to "result" in Code.
+    const signal = variables.signal ?? Number(value);
+    element.textContent = `Value: ${signal}`;
+    emit(Number(signal) * 2, 'result');
   }
-  update(inputs, value);
+  update(inputs, value, variables);
   return { update, destroy() { /* dispose graphics/listeners here */ } };
 }
 ```
 
-`element` is the mask container. `inputs` maps input port IDs to scalar values (number, string, boolean or null); `value` is the block's fallback parameter string. `emit(value, outputPortId)` updates an output (`out-0` by default). The Logic tab shows live input/output values; expanded port properties show IDs. A module can return a cleanup function, or an object with `update(inputs, value)` and `destroy()`. Without an update method, input changes dispose and mount the mask again. ResizeObserver is available for graphics that need to follow block size.
+`inputs` includes original port IDs and their variable aliases; `variables` contains named inputs. `emit(value, outputIdOrVariable)` publishes an output, defaulting to the first output port. Modules may emit bounded JSON values: finite numbers, strings, booleans, null, arrays, and objects (including `{shape: [2,2], data: [1,2,3,4]}` tensors). Cycles, functions, nonfinite numbers, and oversized signals are rejected. The Properties tab shows live inputs and outputs.
 
-The preview layer in `src/runtime.ts` propagates constants, gains, signed sums, and emitted JS outputs within the current canvas. Unsupported operations, disconnected inputs and feedback signals stay null. There is no time stepping, integration, or evaluation across parent boundaries. This layer is deliberately small so consuming projects can supply their own runtime. Module source, visuals, and connection options survive save/load, JSON export, and undo/redo. Emitted values are transient. Hiding mask content keeps the module mounted.
+`setValue(string)` updates the block's saved parameter. Slider positions, selector choices, and button click counts use it, so they survive reload, JSON export/import, and undo/redo. Clock periods are milliseconds (minimum 16 ms); clocks emit successive tick counts and dispose their timers when removed. Trigger counts false-to-true input transitions. Clock ticks and other emitted signal values are transient; they are not stored as execution state.
+
+A module can return a cleanup function or `{ update(inputs, value, variables), destroy() }`. Without `update`, changes dispose and remount the mask. The opaque-origin iframe uses `sandbox="allow-scripts"` and cannot access the editor DOM or local storage. Hiding mask content keeps its runtime mounted. This is a current-canvas value preview; feedback cycles remain unresolved, and execution does not cross parent-canvas boundaries.
+
+**Module imports:** use normal absolute URL `import` statements in code, or add an ES module URL / upload module source under **Code → Modules**. Visual dependencies are exposed both through browser [import maps](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap) (for example, `import { fn } from 'helper'`) and `modules.helper`. Use bare specifiers when embedded modules import each other. Uploaded source is embedded in diagram JSON and works offline; remote URLs need network access and CORS. The DOM recipe works offline. Three.js requires WebGL; the [KaTeX](https://katex.org/docs/api) and [Three.js](https://threejs.org/manual/pages/creating-a-scene.html) recipes fetch their libraries remotely.
+
+**WebAssembly:** the block starts with a working two-input integer `add` module. Import a `.wasm` file in Code and choose its exported function. Binary bytes, filename, wrapper source, port mappings, and exported function are saved in JSON. The default wrapper uses [WebAssembly.instantiate](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/instantiate_static) and calls a numeric function with inputs in port order. Edit the wrapper for memory-based APIs, host imports, WASI, or non-numeric interfaces; there is no automatic WASI environment.
+
+**Value renderer:** connect a number, vector, matrix, nested numeric array, or shaped tensor. Scalars display as numbers, vectors and matrices as tables, and tensors as 2D slices. In Properties, choose decimal precision and a zero-based slice index. Large tables show up to 32 rows and 32 columns per slice. Display settings are saved; live input values remain transient.
+
+Import [`examples/javascript-workbench.json`](examples/javascript-workbench.json) for connected matrix, slider, clock, and WebAssembly examples. The Wasm example adds 6 and 7 and displays 13. Publication exports retain static block labels; executable code, dependencies, binary modules, mappings, and renderer settings are retained in JSON.
 
 ## Connection recipes
 

@@ -68,7 +68,7 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
   radius = v.radius ?? radius;
   const w = node.width ?? 164, h = node.height ?? 116;
   const parent = data.kind === 'subsystem', boundary = data.kind === 'inport' || data.kind === 'outport';
-  const typePath = blockTypePath(data.kind).join(' › ');
+  const typePath = [blockTypePath(data.kind)[0], data.recipe?.toLowerCase() ?? blockTypePath(data.kind)[1]].join(' › ');
   const clip = `block-${index}`; const textClip = `label-${index}`;
   const text = (x: number, y: number, value: string, size: number, attrs = '') => `<text x="${x}" y="${y}" font-size="${size}" ${attrs}>${escapeXml(value)}</text>`;
   let symbol: string;
@@ -76,8 +76,9 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
     symbol = `<g transform="translate(${w / 2 - 45} ${h / 2 - 13})" fill="${palette.secondary}" stroke="${palette.primary}"><path d="M24 10h42" fill="none"/>${[0, 34, 68].map(x => `<rect x="${x}" y="0" width="22" height="20" rx="3"/>`).join('')}</g>`;
   } else if (data.kind === 'scope') symbol = `<path d="M-27 6h8l8-15 10 17 10-12 8 7h10" transform="translate(${w / 2} ${h / 2})" fill="none" stroke="${palette.primary}" stroke-width="1.5" stroke-linejoin="round"/>`;
   else symbol = text(w / 2, h / 2 + 8, boundary ? data.kind === 'inport' ? '↳' : '↗' : data.kind === 'gain' ? `× ${data.value}` : data.value || 'ƒ', 29, `text-anchor="middle" fill="${palette.primary}" font-family="Georgia,serif" clip-path="url(#${clip})"`);
+  if (data.kind === 'renderer') symbol = text(w / 2, h / 2 + 8, 'Value renderer', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (data.kind === 'python') symbol = text(w / 2, h / 2 + 8, 'Python code', 18, `text-anchor="middle" fill="${palette.primary}"`);
-  if (data.kind === 'javascript') symbol = text(w / 2, h / 2 + 8, 'JS module', 18, `text-anchor="middle" fill="${palette.primary}"`);
+  if (data.kind === 'javascript') symbol = text(w / 2, h / 2 + 8, data.recipe ?? 'JS module', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (v.showValue === false) symbol = '';
   const ports = data.ports.map(port => {
     const absolute = handlePoint(node, port); const x = absolute.x - node.position.x, y = absolute.y - node.position.y;

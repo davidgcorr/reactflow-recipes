@@ -1,5 +1,22 @@
 import type { Canvas } from './model';
-export type Signal = number | string | boolean | null;
+export type Signal = number | string | boolean | null | Signal[] | { [key: string]: Signal };
+// Bound messages from sandboxed modules, including cyclic or oversized structures.
+export function isSignal(value: unknown): value is Signal {
+  let budget = 12000;
+  const seen = new Set<object>();
+  function visit(v: unknown, depth: number): boolean {
+    if (--budget < 0 || depth > 12) return false;
+    if (v === null || typeof v === 'boolean') return true;
+    if (typeof v === 'number') return Number.isFinite(v);
+    if (typeof v === 'string') return v.length <= 10000;
+    if (typeof v !== 'object' || !v || seen.has(v)) return false;
+    seen.add(v);
+    const result = Array.isArray(v) ? v.every(x => visit(x, depth + 1)) : Object.getPrototypeOf(v) === Object.prototype && Object.entries(v).every(([k, x]) => !['__proto__', 'constructor', 'prototype'].includes(k) && k.length <= 128 && visit(x, depth + 1));
+    seen.delete(v); return result;
+  }
+  return visit(value, 0);
+}
+export const signalsEqual = (a: Signal | undefined, b: Signal | undefined) => Object.is(a, b) || JSON.stringify(a) === JSON.stringify(b);
 export type Signals = Record<string, Signal>;
 export type Preview = Record<string, { inputs: Signals; outputs: Signals }>;
 // A small acyclic value preview for reusable recipes, without time-domain simulation.

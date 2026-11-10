@@ -23,14 +23,14 @@ import { Block, BlockContext } from '@/components/block-node';
 import { IconButton } from '@/components/editor-ui';
 import { FlowContext, FlowEdge } from '@/components/flow-edge';
 import { PreviewContext } from '@/components/module-mask';
-import { previewSignals, type Signals, type Signal } from '@/runtime';
+import { previewSignals, signalsEqual, type Signals, type Signal } from '@/runtime';
 import { Inspector } from '@/components/inspector';
 import {
   canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
   makeNode, parseDiagram, serializeDiagram, templates, updateCanvas,
   type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
 } from '@/model';
-import { moduleRecipes } from '@/module-recipes';
+import { applyJsRecipe, jsRecipes } from '@/js-recipes';
 import { themeVariables } from '@/theme';
 
 const nodeTypes = { block: Block };
@@ -81,13 +81,13 @@ function Editor() {
   const preview = useMemo(() => previewSignals(canvas, emitted), [canvas, emitted]);
   const emit = useCallback((id: string, port: string, value: Signal) => {
     if (!canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id)?.data.ports.some(p => p.id === port && p.type === 'output')) return;
-    setEmitted(current => Object.is(current[id]?.[port], value) ? current : { ...current, [id]: { ...current[id], [port]: value } });
+    setEmitted(current => signalsEqual(current[id]?.[port], value) ? current : { ...current, [id]: { ...current[id], [port]: value } });
   }, []);
   const moduleVersions = useRef<Record<string, string>>({});
-  const runtimeKey = JSON.stringify([path, nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, n.data.module])]);
+  const runtimeKey = JSON.stringify([path, nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])])]);
   useEffect(() => {
     const previous = moduleVersions.current;
-    const versions = Object.fromEntries(nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, JSON.stringify([path, n.data.module])]));
+    const versions = Object.fromEntries(nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, JSON.stringify([path, n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])])]));
     moduleVersions.current = versions;
     setEmitted(current => Object.fromEntries(Object.entries(current).filter(([id]) => versions[id] !== undefined && previous[id] === versions[id])));
   }, [runtimeKey]);
@@ -106,6 +106,11 @@ function Editor() {
     if (remember) snapshot();
     replace(updateCanvas(documentRef.current, pathRef.current, transform));
   }, [replace, snapshot]);
+  const setSourceValue = useCallback((id: string, value: string) => {
+    const current = canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id);
+    if (!current || current.data.kind !== 'javascript' || current.data.value === value) return;
+    editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, value } } : n) }));
+  }, [editCanvas]);
   const notify = useCallback((message: string) => setToast(message), []);
   useEffect(() => {
     if (!toast) return;
@@ -177,8 +182,8 @@ function Editor() {
     if (!nested && (kind === 'inport' || kind === 'outport')) return;
     if (kind === 'subsystem' && path.length >= 16) { notify('Maximum nesting depth is 16.'); return; }
     const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const node = makeNode(kind, point ?? { x: center.x - 82, y: center.y - 58 });
-    if (recipe && recipe in moduleRecipes) { node.data.module = moduleRecipes[recipe as keyof typeof moduleRecipes]; node.data.label = `${recipe} module`; }
+    let node = makeNode(kind, point ?? { x: center.x - 82, y: center.y - 58 });
+    if (recipe && recipe in jsRecipes) node = applyJsRecipe(node, recipe);
     if (ui.snap) node.position = { x: Math.round(node.position.x / 20) * 20, y: Math.round(node.position.y / 20) * 20 };
     if (node.data.canvas) {
       // Center a freshly created subsystem's internal graph without changing later saved views.
@@ -279,7 +284,7 @@ function Editor() {
     crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
   }
 
-  return <TooltipProvider delayDuration={250}><PreviewContext.Provider value={{ values: preview, emit }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
+  return <TooltipProvider delayDuration={250}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
     <ReactFlow<BlockNode>
       nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
@@ -321,7 +326,7 @@ function Editor() {
         {nested && <div className="nested-library-note"><Network/><span>Input and Output blocks define<br/>this parent's external ports.</span></div>}
         {[
           { title: 'Generators & datatypes', items: availableTemplates.filter(t => t.kind !== 'javascript' && t.kind !== 'python').map(t => ({ ...t, recipe: '' })) },
-          { title: 'JavaScript code blocks', items: Object.keys(moduleRecipes).map(recipe => ({ ...templates.find(t => t.kind === 'javascript')!, label: `${recipe} module`, symbol: recipe === 'DOM' ? 'JS' : recipe === 'LaTeX' ? 'ƒ' : '3D', recipe })) },
+          ...['JavaScript datatypes', 'JavaScript sources', 'JavaScript code blocks'].map(title => ({ title, items: Object.entries(jsRecipes).filter(([, t]) => t.category === title).map(([recipe, t]) => ({ ...templates.find(t => t.kind === 'javascript')!, label: t.label, symbol: t.symbol, description: `${t.label} · JavaScript`, recipe })) })),
           { title: 'Python code blocks', items: availableTemplates.filter(t => t.kind === 'python').map(t => ({ ...t, recipe: '' })) },
         ].map(category => <Collapsible key={category.title} defaultOpen className="library-category"><CollapsibleTrigger className="category-toggle"><ChevronDown/><span>{category.title}</span></CollapsibleTrigger><CollapsibleContent><div className="palette-grid">{category.items.map(t => <Button key={t.recipe || t.kind} variant="ghost" className="palette-tile" draggable onDragStart={e => { e.dataTransfer.setData('application/milver', t.kind); e.dataTransfer.setData('application/milver-recipe', t.recipe); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind, undefined, t.recipe)} title={t.description}><span className="palette-glyph">{t.kind === 'subsystem' ? <Network/> : t.symbol}</span><span>{t.label}</span></Button>)}</div>{!category.items.length && <p className="category-empty">No blocks yet</p>}</CollapsibleContent></Collapsible>)}
       </div>

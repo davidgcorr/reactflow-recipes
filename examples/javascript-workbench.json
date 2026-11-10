@@ -1,0 +1,364 @@
+{
+  "version": 1,
+  "name": "JavaScript workbench",
+  "viewport": {
+    "x": 40,
+    "y": 80,
+    "zoom": 0.65
+  },
+  "nodes": [
+    {
+      "id": "matrix",
+      "type": "block",
+      "position": {
+        "x": 40,
+        "y": 80
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "Matrix",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,2],[3,4]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default function mount({ element, value, emit }) {\n  function update(inputs, value) {\n    const result = JSON.parse(value);\n    if (!Array.isArray(result) || !result.length || !result.every(row => Array.isArray(row) && row.length === result[0].length && row.every(Number.isFinite))) throw new Error('Enter a rectangular numeric JSON matrix.');\n    element.textContent = typeof result === 'object' ? JSON.stringify(result) : String(result);\n    element.style.cssText = 'font:14px system-ui;padding:12px;word-break:break-word;box-sizing:border-box';\n    emit(result);\n  }\n  update({}, value); return { update };\n}",
+        "recipe": "Matrix"
+      }
+    },
+    {
+      "id": "matrix-view",
+      "type": "block",
+      "position": {
+        "x": 400,
+        "y": 80
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Value renderer",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    },
+    {
+      "id": "slider",
+      "type": "block",
+      "position": {
+        "x": 40,
+        "y": 400
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "Slider",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"min\":0,\"max\":100,\"step\":1,\"initial\":50}",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default function mount({ element, value, emit, setValue }) {\n  const wrapper=document.createElement('label'), control=document.createElement('input'), output=document.createElement('output');\n  control.type='range'; control.setAttribute('aria-label','Source slider');\n  wrapper.style.cssText='display:grid;gap:12px;width:80%'; wrapper.append(control,output); element.append(wrapper);\n  let config;\n  function publish(){output.textContent=control.value;emit(Number(control.value));}\n  control.oninput=()=>{publish();setValue(JSON.stringify({...config,initial:Number(control.value)}));};\n  function update(inputs,value){config=JSON.parse(value);if(!Number.isFinite(config.min)||!Number.isFinite(config.max)||config.max<=config.min||!Number.isFinite(config.step)||config.step<=0)throw new Error('Slider needs min < max and a positive step.');control.min=config.min;control.max=config.max;control.step=config.step;control.value=config.initial;publish();}\n  update({},value);return {update};\n}",
+        "recipe": "Slider"
+      }
+    },
+    {
+      "id": "numeric-view",
+      "type": "block",
+      "position": {
+        "x": 400,
+        "y": 400
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Value renderer",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    },
+    {
+      "id": "clock",
+      "type": "block",
+      "position": {
+        "x": 40,
+        "y": 720
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "Clock",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "1000",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default function mount({ element, value, emit }) {\n  let timer,period,count=0;\n  function update(inputs,value){const next=Number(value);if(!Number.isFinite(next)||next<16||next>3600000)throw new Error('Clock period must be 16–3600000 ms.');if(next===period)return;clearInterval(timer);period=next;timer=setInterval(()=>{count++;element.textContent=String(count);emit(count);},period);element.textContent=String(count);emit(count);}\n  update({},value);return {update,destroy(){clearInterval(timer);}};\n}",
+        "recipe": "Clock"
+      }
+    },
+    {
+      "id": "clock-view",
+      "type": "block",
+      "position": {
+        "x": 400,
+        "y": 720
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Value renderer",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    },
+    {
+      "id": "a",
+      "type": "block",
+      "position": {
+        "x": 820,
+        "y": 80
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "Number",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "6",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default function mount({ element, value, emit }) {\n  function update(inputs, value) {\n    const result = JSON.parse(value);\n    if (typeof result !== 'number' || !Number.isFinite(result)) throw new Error('Enter a finite JSON number.');\n    element.textContent = typeof result === 'object' ? JSON.stringify(result) : String(result);\n    element.style.cssText = 'font:14px system-ui;padding:12px;word-break:break-word;box-sizing:border-box';\n    emit(result);\n  }\n  update({}, value); return { update };\n}",
+        "recipe": "Number"
+      }
+    },
+    {
+      "id": "b",
+      "type": "block",
+      "position": {
+        "x": 820,
+        "y": 400
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "Number",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "7",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default function mount({ element, value, emit }) {\n  function update(inputs, value) {\n    const result = JSON.parse(value);\n    if (typeof result !== 'number' || !Number.isFinite(result)) throw new Error('Enter a finite JSON number.');\n    element.textContent = typeof result === 'object' ? JSON.stringify(result) : String(result);\n    element.style.cssText = 'font:14px system-ui;padding:12px;word-break:break-word;box-sizing:border-box';\n    emit(result);\n  }\n  update({}, value); return { update };\n}",
+        "recipe": "Number"
+      }
+    },
+    {
+      "id": "wasm",
+      "type": "block",
+      "position": {
+        "x": 1160,
+        "y": 240
+      },
+      "width": 240,
+      "height": 190,
+      "data": {
+        "label": "WebAssembly",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "export default async function mount({ element, inputs, emit, wasm, ports }) {\n  if(!wasm)throw new Error('Import a .wasm module in the Code tab.');\n  const bytes=Uint8Array.from(atob(wasm.base64),c=>c.charCodeAt(0));\n  const {instance}=await WebAssembly.instantiate(bytes, {});\n  const fn=instance.exports[wasm.exportName];\n  if(typeof fn!=='function')throw new Error('Choose an exported WebAssembly function.');\n  function update(inputs){const args=ports.filter(p=>p.type==='input').map(p=>inputs[p.id]);if(args.some(x=>typeof x!=='number'||!Number.isFinite(x))){element.textContent='Connect numeric inputs';emit(null);return;}const result=fn(...args);element.textContent=String(result);emit(typeof result==='bigint'?Number(result):result);}\n  update(inputs);return {update};\n}",
+        "recipe": "WebAssembly",
+        "wasm": {
+          "filename": "add.wasm",
+          "base64": "AGFzbQEAAAABBwFgAn9/AX8DAgEABwcBA2FkZAAACgkBBwAgACABags=",
+          "exportName": "add"
+        }
+      }
+    },
+    {
+      "id": "wasm-view",
+      "type": "block",
+      "position": {
+        "x": 1500,
+        "y": 240
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Value renderer",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "matrix-matrix-view",
+      "source": "matrix",
+      "target": "matrix-view",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "slider-numeric-view",
+      "source": "slider",
+      "target": "numeric-view",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "clock-clock-view",
+      "source": "clock",
+      "target": "clock-view",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "a-wasm",
+      "source": "a",
+      "target": "wasm",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "b-wasm",
+      "source": "b",
+      "target": "wasm",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "wasm-wasm-view",
+      "source": "wasm",
+      "target": "wasm-view",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    }
+  ]
+}
