@@ -1,0 +1,661 @@
+{
+  "version": 1,
+  "name": "Shared modules and live instances",
+  "modules": [
+    {
+      "id": "math-module",
+      "alias": "math",
+      "source": "export const EPSILON = 1e-6;\nexport function add(a, b) { return a + b; }\nexport function matmul(a, b) {\n  if (!a.length || !b.length || a[0].length !== b.length || a.some(r => r.length !== a[0].length) || b.some(r => r.length !== b[0].length)) throw new Error('Incompatible matrix shapes');\n  return a.map(row => b[0].map((_, j) => row.reduce((sum, x, k) => sum + x * b[k][j], 0)));\n}\nexport class Accumulator {\n  constructor(initial = 0) { this.value = initial; }\n  add(amount) { this.value += amount; return this.value; }\n  read() { return this.value; }\n  reset() { this.value = 0; }\n}\n// Optional hints for visual ports; arbitrary APIs can also be configured in Properties.\nexport const milver = { add: { args: ['a', 'b'] }, matmul: { args: ['a', 'b'] }, Accumulator: { args: ['initial'], methods: { add: { args: ['amount'] }, read: { args: [] }, reset: { args: [] } } } };\n"
+    }
+  ],
+  "viewport": {
+    "x": 250,
+    "y": 80,
+    "zoom": 0.65
+  },
+  "nodes": [
+    {
+      "id": "import",
+      "type": "block",
+      "position": {
+        "x": 20,
+        "y": 20
+      },
+      "width": 220,
+      "height": 120,
+      "data": {
+        "label": "Project math library",
+        "kind": "module",
+        "description": "Import functions, classes and constants for the project",
+        "color": "#171717",
+        "value": "",
+        "ports": [],
+        "projectModuleId": "math-module"
+      }
+    },
+    {
+      "id": "matrix-a",
+      "type": "block",
+      "position": {
+        "x": 20,
+        "y": 220
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Matrix A",
+        "kind": "constant",
+        "description": "A fixed signal value",
+        "color": "#171717",
+        "value": "[[1,2],[3,4]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "matrix-b",
+      "type": "block",
+      "position": {
+        "x": 20,
+        "y": 430
+      },
+      "width": 164,
+      "height": 116,
+      "data": {
+        "label": "Matrix B",
+        "kind": "constant",
+        "description": "A fixed signal value",
+        "color": "#171717",
+        "value": "[[5],[6]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right"
+          }
+        ]
+      }
+    },
+    {
+      "id": "matmul",
+      "type": "block",
+      "position": {
+        "x": 330,
+        "y": 250
+      },
+      "width": 240,
+      "height": 150,
+      "data": {
+        "label": "matmul",
+        "kind": "compute",
+        "description": "Run code in the shared project runtime",
+        "color": "#171717",
+        "value": "[]",
+        "ports": [
+          {
+            "id": "arg-0",
+            "name": "a",
+            "variable": "a",
+            "side": "left",
+            "type": "input"
+          },
+          {
+            "id": "arg-1",
+            "name": "b",
+            "variable": "b",
+            "side": "left",
+            "type": "input"
+          },
+          {
+            "id": "trigger",
+            "name": "trigger / after",
+            "variable": "trigger",
+            "side": "top",
+            "type": "input"
+          },
+          {
+            "id": "result",
+            "name": "result",
+            "variable": "result",
+            "side": "right",
+            "type": "output"
+          },
+          {
+            "id": "done",
+            "name": "done",
+            "variable": "done",
+            "side": "bottom",
+            "type": "output"
+          }
+        ],
+        "module": "export function run({ inputs, modules, state, parameters, tick }) {\n  // Project modules are available by alias, e.g. modules.linalg.matmul(a, b).\n  return { result: inputs.input1 ?? parameters };\n}",
+        "operation": {
+          "type": "function",
+          "effect": "pure",
+          "moduleId": "math-module",
+          "exportName": "matmul"
+        }
+      }
+    },
+    {
+      "id": "matrix-view",
+      "type": "block",
+      "position": {
+        "x": 660,
+        "y": 240
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Expected: 17, 39",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    },
+    {
+      "id": "instance",
+      "type": "block",
+      "position": {
+        "x": 20,
+        "y": 740
+      },
+      "width": 240,
+      "height": 150,
+      "data": {
+        "label": "Accumulator",
+        "kind": "compute",
+        "description": "Run code in the shared project runtime",
+        "color": "#171717",
+        "value": "[10]",
+        "ports": [
+          {
+            "id": "arg-0",
+            "name": "initial",
+            "variable": "initial",
+            "side": "left",
+            "type": "input"
+          },
+          {
+            "id": "result",
+            "name": "instance",
+            "variable": "result",
+            "side": "right",
+            "type": "output"
+          }
+        ],
+        "module": "export function run({ inputs, modules, state, parameters, tick }) {\n  // Project modules are available by alias, e.g. modules.linalg.matmul(a, b).\n  return { result: inputs.input1 ?? parameters };\n}",
+        "operation": {
+          "type": "construct",
+          "effect": "pure",
+          "moduleId": "math-module",
+          "exportName": "Accumulator"
+        }
+      }
+    },
+    {
+      "id": "first-add",
+      "type": "block",
+      "position": {
+        "x": 330,
+        "y": 740
+      },
+      "width": 240,
+      "height": 150,
+      "data": {
+        "label": "Add 2 on each Step",
+        "kind": "compute",
+        "description": "Run code in the shared project runtime",
+        "color": "#171717",
+        "value": "[2]",
+        "ports": [
+          {
+            "id": "object",
+            "name": "object",
+            "variable": "object",
+            "side": "left",
+            "type": "input"
+          },
+          {
+            "id": "arg-0",
+            "name": "amount",
+            "variable": "amount",
+            "side": "left",
+            "type": "input"
+          },
+          {
+            "id": "trigger",
+            "name": "trigger / after",
+            "variable": "trigger",
+            "side": "top",
+            "type": "input"
+          },
+          {
+            "id": "result",
+            "name": "result",
+            "variable": "result",
+            "side": "right",
+            "type": "output"
+          },
+          {
+            "id": "instance",
+            "name": "same object",
+            "variable": "instance",
+            "side": "right",
+            "type": "output"
+          },
+          {
+            "id": "done",
+            "name": "done",
+            "variable": "done",
+            "side": "bottom",
+            "type": "output"
+          }
+        ],
+        "module": "export function run({ inputs, modules, state, parameters, tick }) {\n  // Project modules are available by alias, e.g. modules.linalg.matmul(a, b).\n  return { result: inputs.input1 ?? parameters };\n}",
+        "operation": {
+          "type": "method",
+          "effect": "step",
+          "moduleId": "math-module",
+          "member": "add"
+        }
+      }
+    },
+    {
+      "id": "nested",
+      "type": "block",
+      "position": {
+        "x": 670,
+        "y": 740
+      },
+      "width": 200,
+      "height": 140,
+      "data": {
+        "label": "Nested: add 3 after first",
+        "kind": "subsystem",
+        "description": "A canvas inside a block",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "object-in",
+            "name": "Shared instance",
+            "type": "input",
+            "side": "left"
+          },
+          {
+            "id": "after-in",
+            "name": "After",
+            "type": "input",
+            "side": "top"
+          },
+          {
+            "id": "result-out",
+            "name": "Value",
+            "type": "output",
+            "side": "right"
+          }
+        ],
+        "canvas": {
+          "viewport": {
+            "x": 30,
+            "y": 100,
+            "zoom": 0.8
+          },
+          "nodes": [
+            {
+              "id": "object-in",
+              "type": "block",
+              "position": {
+                "x": 20,
+                "y": 100
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "Shared instance",
+                "kind": "inport",
+                "description": "Expose an input on the parent",
+                "color": "#171717",
+                "value": "",
+                "ports": [
+                  {
+                    "id": "out-0",
+                    "name": "out",
+                    "type": "output",
+                    "side": "right"
+                  }
+                ],
+                "exposedSide": "left"
+              }
+            },
+            {
+              "id": "after-in",
+              "type": "block",
+              "position": {
+                "x": 20,
+                "y": 300
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "After",
+                "kind": "inport",
+                "description": "Expose an input on the parent",
+                "color": "#171717",
+                "value": "",
+                "ports": [
+                  {
+                    "id": "out-0",
+                    "name": "out",
+                    "type": "output",
+                    "side": "right"
+                  }
+                ],
+                "exposedSide": "top"
+              }
+            },
+            {
+              "id": "second-add",
+              "type": "block",
+              "position": {
+                "x": 330,
+                "y": 150
+              },
+              "width": 240,
+              "height": 150,
+              "data": {
+                "label": "add",
+                "kind": "compute",
+                "description": "Run code in the shared project runtime",
+                "color": "#171717",
+                "value": "[3]",
+                "ports": [
+                  {
+                    "id": "object",
+                    "name": "object",
+                    "variable": "object",
+                    "side": "left",
+                    "type": "input"
+                  },
+                  {
+                    "id": "arg-0",
+                    "name": "amount",
+                    "variable": "amount",
+                    "side": "left",
+                    "type": "input"
+                  },
+                  {
+                    "id": "trigger",
+                    "name": "trigger / after",
+                    "variable": "trigger",
+                    "side": "top",
+                    "type": "input"
+                  },
+                  {
+                    "id": "result",
+                    "name": "result",
+                    "variable": "result",
+                    "side": "right",
+                    "type": "output"
+                  },
+                  {
+                    "id": "instance",
+                    "name": "same object",
+                    "variable": "instance",
+                    "side": "right",
+                    "type": "output"
+                  },
+                  {
+                    "id": "done",
+                    "name": "done",
+                    "variable": "done",
+                    "side": "bottom",
+                    "type": "output"
+                  }
+                ],
+                "module": "export function run({ inputs, modules, state, parameters, tick }) {\n  // Project modules are available by alias, e.g. modules.linalg.matmul(a, b).\n  return { result: inputs.input1 ?? parameters };\n}",
+                "operation": {
+                  "type": "method",
+                  "effect": "step",
+                  "moduleId": "math-module",
+                  "member": "add"
+                }
+              }
+            },
+            {
+              "id": "result-out",
+              "type": "block",
+              "position": {
+                "x": 700,
+                "y": 150
+              },
+              "width": 164,
+              "height": 116,
+              "data": {
+                "label": "Value",
+                "kind": "outport",
+                "description": "Expose an output on the parent",
+                "color": "#171717",
+                "value": "",
+                "ports": [
+                  {
+                    "id": "in-0",
+                    "name": "in",
+                    "type": "input",
+                    "side": "left"
+                  }
+                ],
+                "exposedSide": "right"
+              }
+            }
+          ],
+          "edges": [
+            {
+              "id": "object-method",
+              "source": "object-in",
+              "target": "second-add",
+              "sourceHandle": "out-0",
+              "targetHandle": "object",
+              "type": "smoothstep"
+            },
+            {
+              "id": "after-method",
+              "source": "after-in",
+              "target": "second-add",
+              "sourceHandle": "out-0",
+              "targetHandle": "trigger",
+              "type": "smoothstep"
+            },
+            {
+              "id": "method-out",
+              "source": "second-add",
+              "target": "result-out",
+              "sourceHandle": "result",
+              "targetHandle": "in-0",
+              "type": "smoothstep"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "instance-view",
+      "type": "block",
+      "position": {
+        "x": 1020,
+        "y": 730
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Step: 15, then 20, then 25…",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    },
+    {
+      "id": "shared-code",
+      "type": "block",
+      "position": {
+        "x": 330,
+        "y": 20
+      },
+      "width": 240,
+      "height": 150,
+      "data": {
+        "label": "Code uses the same module",
+        "kind": "compute",
+        "description": "Run code in the shared project runtime",
+        "color": "#171717",
+        "value": "null",
+        "ports": [
+          {
+            "id": "result",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "result"
+          }
+        ],
+        "module": "export function run({ modules }) { return { result: modules.math.add(20, 22) }; }",
+        "operation": {
+          "type": "code",
+          "effect": "pure",
+          "uses": [
+            "math"
+          ]
+        }
+      }
+    },
+    {
+      "id": "code-view",
+      "type": "block",
+      "position": {
+        "x": 660,
+        "y": 0
+      },
+      "width": 280,
+      "height": 210,
+      "data": {
+        "label": "Expected: 42",
+        "kind": "renderer",
+        "description": "Inspect numbers, vectors, matrices and tensors",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in",
+            "type": "input",
+            "side": "left"
+          }
+        ],
+        "renderer": {
+          "precision": 4,
+          "slice": 0
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "a-multiply",
+      "source": "matrix-a",
+      "target": "matmul",
+      "sourceHandle": "out-0",
+      "targetHandle": "arg-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "b-multiply",
+      "source": "matrix-b",
+      "target": "matmul",
+      "sourceHandle": "out-0",
+      "targetHandle": "arg-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "multiply-view",
+      "source": "matmul",
+      "target": "matrix-view",
+      "sourceHandle": "result",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "instance-first",
+      "source": "instance",
+      "target": "first-add",
+      "sourceHandle": "result",
+      "targetHandle": "object",
+      "type": "smoothstep"
+    },
+    {
+      "id": "first-nested",
+      "source": "first-add",
+      "target": "nested",
+      "sourceHandle": "instance",
+      "targetHandle": "object-in",
+      "type": "smoothstep"
+    },
+    {
+      "id": "after-nested",
+      "source": "first-add",
+      "target": "nested",
+      "sourceHandle": "done",
+      "targetHandle": "after-in",
+      "type": "smoothstep"
+    },
+    {
+      "id": "nested-view",
+      "source": "nested",
+      "target": "instance-view",
+      "sourceHandle": "result-out",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "code-view",
+      "source": "shared-code",
+      "target": "code-view",
+      "sourceHandle": "result",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    }
+  ]
+}

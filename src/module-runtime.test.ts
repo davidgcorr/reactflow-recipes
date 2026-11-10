@@ -39,6 +39,11 @@ describe('sandbox module bridge', () => {
     expect(run.messages.at(-1)).toMatchObject({ port: 'out-0', value: [7] });
     run.dispose();
   });
+  it('publishes distinct events even when their payloads are equal', async () => {
+    const run = await sandbox('export default function mount({emitEvent}) { emitEvent(true); emitEvent(true); }');
+    await run.send('1');
+    expect(run.messages.filter(m => m.type === 'mask-output')).toEqual([{ type: 'mask-output', token: 'session', port: 'out-0', value: true, event: true }, { type: 'mask-output', token: 'session', port: 'out-0', value: true, event: true }]);
+  });
   it('disposes failed updates and remounts correctly after fixing the parameter', async () => {
     const run = await sandbox(`export default function mount({element,value,emit}){function update(inputs,value){if(value==='bad')throw new Error('bad parameter');element.textContent=value;emit(Number(value));}update({},value);return {update,destroy(){element.textContent='disposed'}};}`);
     await run.send('1'); expect(run.element.textContent).toBe('1');

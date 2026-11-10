@@ -7,7 +7,7 @@ import {
 import {
   ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Copy, Download, Expand,
   Grid3X3, Hand, Home, Map, Menu, Minus, MousePointer2, Network,
-  Palette, PanelRight, Plus, Redo2, Undo2, Upload,
+  Palette, PanelRight, Pause, Play, RotateCcw, Square, StepForward, Plus, Redo2, Undo2, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -31,6 +31,13 @@ import {
   type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
 } from '@/model';
 import { applyJsRecipe, jsRecipes } from '@/js-recipes';
+import { sharedModulesExample } from '@/project/example';
+import { ProjectModules } from '@/components/project-modules';
+import { ProjectContext } from '@/project/context';
+import { useProjectRuntime } from '@/project/use-project-runtime';
+import type { NodeResult } from '@/project/engine';
+import { nodeKey } from '@/project/graph';
+import { exampleModuleSource, parseModules, type ProjectModule } from '@/project/schema';
 import { themeVariables } from '@/theme';
 
 const nodeTypes = { block: Block };
@@ -54,6 +61,7 @@ function loadUI(): WorkspaceUI {
 }
 
 function Editor() {
+  const [eventCounters, setEventCounters] = useState<Record<string, Record<string, number>>>({});
   const [emitted, setEmitted] = useState<Record<string, Signals>>({});
   const [initial] = useState(load);
   const [document, setDocument] = useState(initial.document);
@@ -78,18 +86,26 @@ function Editor() {
   const nodes = canvas.nodes; const edges = canvas.edges;
   const selected = nodes.find(n => n.selected);
   const selectedEdge = edges.find(e => e.selected);
-  const preview = useMemo(() => previewSignals(canvas, emitted), [canvas, emitted]);
-  const emit = useCallback((id: string, port: string, value: Signal) => {
+  const runtimeExternal = useMemo(() => Object.fromEntries(Object.entries(emitted).map(([id, values]) => [id, { values, events: eventCounters[id] ?? {} }])), [emitted, eventCounters]);
+  const projectRuntime = useProjectRuntime(document, runtimeExternal);
+  const preview = useMemo(() => projectRuntime.enabled && projectRuntime.result ? Object.fromEntries(nodes.map(n => { const value = projectRuntime.result!.nodes[nodeKey(path, n.id)]; return [n.id, { inputs: value?.inputs ?? {}, outputs: value?.outputs ?? {} }]; })) : previewSignals(canvas, Object.fromEntries(nodes.map(n => [n.id, emitted[nodeKey(path, n.id)] ?? {}]))), [canvas, emitted, projectRuntime.enabled, projectRuntime.result, path]);
+  const projectValues: Record<string, NodeResult> = {};
+  for (const n of nodes) { const value = projectRuntime.result?.nodes[nodeKey(path, n.id)]; if (value) projectValues[n.id] = value; }
+  const emit = useCallback((id: string, port: string, value: Signal, event = false) => {
     if (!canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id)?.data.ports.some(p => p.id === port && p.type === 'output')) return;
-    setEmitted(current => signalsEqual(current[id]?.[port], value) ? current : { ...current, [id]: { ...current[id], [port]: value } });
+    const key = nodeKey(pathRef.current, id);
+    if (event) setEventCounters(current => ({ ...current, [key]: { ...current[key], [port]: (current[key]?.[port] ?? 0) + 1 } }));
+    setEmitted(current => signalsEqual(current[key]?.[port], value) ? current : { ...current, [key]: { ...current[key], [port]: value } });
   }, []);
   const moduleVersions = useRef<Record<string, string>>({});
-  const runtimeKey = JSON.stringify([path, nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])])]);
+  const legacyVersions: Record<string, string> = {};
+  const collectVersions = (c: Canvas, parent: string[] = []) => { for (const n of c.nodes) { if (n.data.kind === 'javascript') legacyVersions[nodeKey(parent, n.id)] = JSON.stringify([n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])]); if (n.data.canvas) collectVersions(n.data.canvas, [...parent, n.id]); } };
+  collectVersions(document);
+  const runtimeKey = JSON.stringify(legacyVersions);
   useEffect(() => {
-    const previous = moduleVersions.current;
-    const versions = Object.fromEntries(nodes.filter(n => n.data.kind === 'javascript').map(n => [n.id, JSON.stringify([path, n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])])]));
-    moduleVersions.current = versions;
-    setEmitted(current => Object.fromEntries(Object.entries(current).filter(([id]) => versions[id] !== undefined && previous[id] === versions[id])));
+    const previous = moduleVersions.current; moduleVersions.current = legacyVersions;
+    setEmitted(current => Object.fromEntries(Object.entries(current).filter(([id]) => legacyVersions[id] !== undefined && previous[id] === legacyVersions[id])));
+    setEventCounters(current => Object.fromEntries(Object.entries(current).filter(([id]) => legacyVersions[id] !== undefined && previous[id] === legacyVersions[id])));
   }, [runtimeKey]);
   useEffect(() => {
     setUI(u => ({ ...u, inspector: !!(selected || selectedEdge), ...(selected && window.innerWidth < 700 ? { library: false } : {}) }));
@@ -179,6 +195,7 @@ function Editor() {
   };
   const availableTemplates = templates.filter(t => nested || t.kind !== 'inport' && t.kind !== 'outport');
   const addBlock = (kind: string, point?: { x: number; y: number }, recipe?: string) => {
+    if (kind === 'module') { createProjectModule(); return; }
     if (!nested && (kind === 'inport' || kind === 'outport')) return;
     if (kind === 'subsystem' && path.length >= 16) { notify('Maximum nesting depth is 16.'); return; }
     const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
@@ -191,6 +208,23 @@ function Editor() {
     }
     editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] }));
   };
+  const addProjectBlock = (node: BlockNode) => {
+    const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    node.position = { x: center.x - (node.width ?? 164) / 2, y: center.y - (node.height ?? 116) / 2 };
+    editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] }));
+  };
+  const createProjectModule = (source = exampleModuleSource, filename = 'math', url?: string) => {
+    const root = documentRef.current, modules = root.modules ?? [];
+    let alias = filename.replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_$]/g, '_') || 'module';
+    if (!/^[A-Za-z_$]/.test(alias) || ['__proto__', 'constructor', 'prototype'].includes(alias)) alias = `module_${alias}`;
+    alias = alias.slice(0, 55); const base = alias; let index = 1; while (modules.some(m => m.alias === alias)) alias = `${base}_${index++}`;
+    const module: ProjectModule = { id: crypto.randomUUID(), alias, ...(/\.m?js$/.test(filename) ? { filename } : {}), ...(url ? { url } : { source }) };
+    parseModules([...modules, module]); snapshot();
+    const node = makeNode('module', flow.screenToFlowPosition({ x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 60 })); node.data.projectModuleId = module.id; node.data.label = alias;
+    replace(updateCanvas({ ...root, modules: [...modules, module] }, pathRef.current, c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] })));
+  };
+  const updateProjectModule = (module: ProjectModule) => { const modules = (documentRef.current.modules ?? []).map(m => m.id === module.id ? module : m); parseModules(modules); snapshot(); replace({ ...documentRef.current, modules }); };
+  const removeProjectModule = (id: string) => { snapshot(); replace({ ...documentRef.current, modules: documentRef.current.modules?.filter(m => m.id !== id) }); };
   const onDrop = (event: DragEvent) => {
     event.preventDefault(); const kind = event.dataTransfer.getData('application/milver') || event.dataTransfer.getData('application/flowbench');
     if (availableTemplates.some(t => t.kind === kind)) addBlock(kind, flow.screenToFlowPosition({ x: event.clientX, y: event.clientY }), event.dataTransfer.getData('application/milver-recipe'));
@@ -284,7 +318,7 @@ function Editor() {
     crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
   }
 
-  return <TooltipProvider delayDuration={250}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
+  return <TooltipProvider delayDuration={250}><ProjectContext.Provider value={{ modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: () => { snapshot(); goTo([]); replace(sharedModulesExample()); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
     <ReactFlow<BlockNode>
       nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
@@ -322,7 +356,7 @@ function Editor() {
     </Card>
 
     <Collapsible open={ui.library} className="left-panel-position" id="block-library"><CollapsibleContent><Card className="floating-panel library-panel" aria-label="Block library">
-      <div className="panel-scroll">
+      <div className="panel-scroll"><ProjectModules/>
         {nested && <div className="nested-library-note"><Network/><span>Input and Output blocks define<br/>this parent's external ports.</span></div>}
         {[
           { title: 'Generators & datatypes', items: availableTemplates.filter(t => t.kind !== 'javascript' && t.kind !== 'python').map(t => ({ ...t, recipe: '' })) },
@@ -338,6 +372,8 @@ function Editor() {
 
     <Card className="floating-island bottom-left-island"><IconButton label="Help and shortcuts" onClick={() => setHelpOpen(true)}><CircleHelp/></IconButton><Separator orientation="vertical"/><span className="diagram-stats">{nodes.length} blocks<span>·</span>{edges.length} connections</span><span className="save-label">{saved ? 'Saved locally' : 'Saving…'}</span></Card>
     <Card className="floating-island zoom-island"><IconButton label="Zoom out" onClick={() => void flow.zoomOut({ duration: 150 })}><Minus/></IconButton><span className="zoom-value">{Math.round(canvas.viewport.zoom * 100)}%</span><IconButton label="Zoom in" onClick={() => void flow.zoomIn({ duration: 150 })}><Plus/></IconButton><Separator orientation="vertical"/><IconButton label="Fit to view (1)" onClick={() => void flow.fitView({ padding: 0.35, maxZoom: 1, duration: 200 })}><Expand/></IconButton><IconButton label="Toggle minimap" aria-pressed={ui.minimap} onClick={() => setUI(u => ({ ...u, minimap: !u.minimap }))}><Map/></IconButton></Card>
+    {projectRuntime.enabled && <Card className="floating-island execution-island" role="toolbar" aria-label="Project execution"><IconButton label={projectRuntime.live ? 'Pause project' : 'Enable live project'} aria-pressed={projectRuntime.live} onClick={() => projectRuntime.setLive(!projectRuntime.live)}>{projectRuntime.live ? <Pause/> : <Play/>}</IconButton><IconButton label="Run project once" disabled={projectRuntime.busy} onClick={projectRuntime.step}><Play/></IconButton><IconButton label="Step project" disabled={projectRuntime.busy} onClick={projectRuntime.step}><StepForward/></IconButton><IconButton label="Stop project" onClick={projectRuntime.stop}><Square/></IconButton><IconButton label="Reset project instances" onClick={projectRuntime.reset}><RotateCcw/></IconButton><span role="status">{projectRuntime.busy ? 'Running…' : projectRuntime.error ? 'Error' : `${projectRuntime.live ? 'Live' : 'Paused'} · step ${projectRuntime.result?.tick ?? 0}`}</span></Card>}
+    {projectRuntime.error && <div className="project-runtime-error" role="alert">{projectRuntime.error}</div>}
     <input className="sr-only" tabIndex={-1} ref={fileRef} type="file" accept=".json,application/json" aria-label="Import diagram file" onChange={async event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (file) { let text = ''; try { text = await file.text(); parseDiagram(text); importJson(text); } catch (error) { setJsonError(error instanceof Error ? error.message : 'Could not read JSON file'); setJson(text); setJsonOpen(true); } }
@@ -347,6 +383,6 @@ function Editor() {
     <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize it. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. A collection of reusable block and canvas recipes. Connected constants, gains, sums and JS modules provide live value previews; feedback and time-domain simulation are left to consuming projects.</p><a className="license-link" href={`${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`} target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
     {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
-  </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></TooltipProvider>;
+  </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></ProjectContext.Provider></TooltipProvider>;
 }
 export default function App() { return <ReactFlowProvider><Editor/></ReactFlowProvider>; }

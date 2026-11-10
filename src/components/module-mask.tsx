@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { defaultModule, type Port } from '@/model';
 import type { ModuleDependency, WasmConfig } from '@/code-config';
 import { isSignal, type Preview, type Signal } from '@/runtime';
-export const PreviewContext = createContext<{ values: Preview; emit: (id: string, port: string, value: Signal) => void; setValue: (id: string, value: string) => void }>({ values: {}, emit: () => {}, setValue: () => {} });
+export const PreviewContext = createContext<{ values: Preview; emit: (id: string, port: string, value: Signal, event?: boolean) => void; setValue: (id: string, value: string) => void }>({ values: {}, emit: () => {}, setValue: () => {} });
 export type ModuleOptions = { dependencies?: ModuleDependency[]; ports?: Pick<Port, 'id' | 'type' | 'variable'>[]; wasm?: WasmConfig; token?: string };
 export function moduleDocument(source: string, options: ModuleOptions = {}): string {
   const encode = (value: unknown) => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -15,7 +15,8 @@ const report = error => { const previous=current;current=undefined;try{const cle
 addEventListener('error', e=>report(e.error || e.message));
 addEventListener('unhandledrejection', e=>report(e.reason));
 const outputPorts=(config.ports??[]).filter(p=>p.type==='output');
-const emit=(value, port=outputPorts[0]?.id??'out-0')=>{const resolved=outputPorts.find(p=>p.variable===port)?.id??port;if(validSignal(value))send({type:'mask-output',port:resolved,value});else report(new Error('Output must be bounded JSON data (finite numbers, strings, arrays, or objects).'));};
+const emit=(value, port=outputPorts[0]?.id??'out-0', event=false)=>{const resolved=outputPorts.find(p=>p.variable===port)?.id??port;if(validSignal(value))send({type:'mask-output',port:resolved,value,...(event?{event:true}:{})});else report(new Error('Output must be bounded JSON data (finite numbers, strings, arrays, or objects).'));};
+const emitEvent=(value,port)=>emit(value,port,true);
 const setValue=value=>{if(typeof value==='string'&&value.length<=100000)send({type:'mask-value',value});};
 async function flush() {
  if(running || !mount) return; running=true;
@@ -27,7 +28,7 @@ async function flush() {
    if(current && typeof current.update==='function')await current.update(inputs,next.value,variables);
    else {
      if(typeof current==='function')await current();else if(current?.destroy)await current.destroy();
-     element.replaceChildren();current=await mount({element,inputs,variables,value:next.value,emit,setValue,modules,wasm:config.wasm,ports:config.ports});
+     element.replaceChildren();current=await mount({element,inputs,variables,value:next.value,emit,emitEvent,setValue,modules,wasm:config.wasm,ports:config.ports});
    }
  } } catch(error) { report(error); } finally { running=false; }
 }
@@ -57,7 +58,7 @@ export function ModuleMask({ id, source, value, color, background, ports, depend
     const receive = (e: MessageEvent) => {
       if (e.source !== frame.current?.contentWindow || e.data?.token !== token.current) return;
       if (e.data.type === 'mask-ready') send();
-      if (e.data.type === 'mask-output' && typeof e.data.port === 'string' && isSignal(e.data.value)) emit(id, e.data.port, e.data.value);
+      if (e.data.type === 'mask-output' && typeof e.data.port === 'string' && isSignal(e.data.value)) emit(id, e.data.port, e.data.value, e.data.event === true);
       if (e.data.type === 'mask-value' && typeof e.data.value === 'string' && e.data.value.length <= 100000) setValue(id, e.data.value);
       if (e.data.type === 'mask-error') ports.filter(p => p.type === 'output').forEach(p => emit(id, p.id, null));
     };

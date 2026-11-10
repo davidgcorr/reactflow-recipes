@@ -1,3 +1,5 @@
+import { ProjectModuleProperties, OperationProperties } from './project-modules';
+import { ProjectContext } from '@/project/context';
 import { PreviewContext } from './module-mask';
 import { useContext, useEffect, useState } from 'react';
 import { CodeProperties } from './code-properties';
@@ -22,9 +24,10 @@ export function Inspector({ node, edge, nodes, activePort, setActivePort, update
   updatePort: (id: string, patch: Partial<Port>) => void; removePort: (id: string) => void;
   addPort: (type: Port['type']) => void; enter: (id: string) => void; duplicate: () => void; remove: () => void;
 }) {
+  const project = useContext(ProjectContext);
   const preview = useContext(PreviewContext).values;
   const [tab, setTab] = useState<'properties' | 'visuals' | 'code'>('properties');
-  const codeBlock = node?.data.kind === 'javascript' || node?.data.kind === 'python';
+  const codeBlock = node?.data.kind === 'javascript' || node?.data.kind === 'python' || node?.data.operation?.type === 'code';
   useEffect(() => { if (!codeBlock && tab === 'code') setTab('properties'); }, [codeBlock, tab]);
   const parent = node?.data.kind === 'subsystem'; const boundary = node && isInterface(node);
   return <Card className="floating-panel inspector-panel" aria-label="Inspector">
@@ -41,6 +44,9 @@ export function Inspector({ node, edge, nodes, activePort, setActivePort, update
           {node.data.kind === 'python' && <p className="field-help">Edit Python source in Code. Source is saved for your own runtime; Python does not execute here.</p>}
           {node.data.kind === 'javascript' && <Field label="Live inputs → outputs"><pre className="signal-preview">{JSON.stringify(preview[node.id] ?? {}, null, 2)}</pre><p className="field-help">Use these port IDs in your module. Edit its source in Code.</p></Field>}
         </section>
+        {node.data.kind === 'module' && <ProjectModuleProperties key={node.id} node={node} update={update}/>}
+        {node.data.operation && <OperationProperties key={node.id} node={node} update={update}/>}
+        {project.values[node.id] && <section className="property-section"><h3>Runtime · {project.values[node.id].status}</h3>{project.values[node.id].error && <p className="code-error" role="alert">{project.values[node.id].error}</p>}<pre className="signal-preview">{JSON.stringify(project.values[node.id].outputs, null, 2)}</pre><p className="field-help">{project.values[node.id].ms.toFixed(2)} ms{project.values[node.id].cached ? ' · cached' : ''}</p></section>}
         {node.data.kind === 'renderer' && <section className="property-section"><h3>Value display</h3><Field label="Decimal precision"><Input aria-label="Renderer precision" type="number" min={0} max={12} value={node.data.renderer?.precision ?? 4} onChange={e => { const precision = Number(e.target.value); if (Number.isInteger(precision) && precision >= 0 && precision <= 12) update({ renderer: { slice: node.data.renderer?.slice ?? 0, precision } }); }}/></Field><Field label="Tensor slice (zero-based)"><Input aria-label="Tensor slice" type="number" min={0} max={10000} value={node.data.renderer?.slice ?? 0} onChange={e => { const slice = Number(e.target.value); if (Number.isInteger(slice) && slice >= 0 && slice <= 10000) update({ renderer: { precision: node.data.renderer?.precision ?? 4, slice } }); }}/></Field></section>}
         <Separator/>
         {boundary ? <section className="property-section"><h3>Parent interface</h3><p className="field-help">This block defines an {node.data.kind === 'inport' ? 'input' : 'output'} on the parent. Its name and side stay in sync.</p><Field label="Side on parent"><SideSelect label="Exposed port side" value={node.data.exposedSide ?? (node.data.kind === 'inport' ? 'left' : 'right')} onChange={exposedSide => update({ exposedSide })}/></Field><div className="interface-direction">{node.data.kind === 'inport' ? <ArrowDownLeft/> : <ArrowUpRight/>}<span>{node.data.kind === 'inport' ? 'Parent input → internal output' : 'Internal input → parent output'}</span></div></section> : <section className="property-section"><div className="section-heading"><h3>Inputs & outputs</h3><Badge variant="secondary">{node.data.ports.length}</Badge></div>{parent && <p className="field-help">Defined by Input and Output blocks in the internal canvas.</p>}

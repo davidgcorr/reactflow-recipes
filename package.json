@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
+    "dev": "node scripts/build-project-runtime.mjs && vite --host 127.0.0.1",
+    "build": "tsc -b && node scripts/build-project-runtime.mjs && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run"
   },
@@ -14,6 +14,7 @@
     "@xyflow/react": "^12.9.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "es-module-lexer": "2.3.2",
     "gifenc": "^1.0.3",
     "lucide-react": "^0.468.0",
     "radix-ui": "^1.8.1",

@@ -138,11 +138,55 @@ The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https:
 
 This is a diagram editor, not a numerical simulation engine. Constants, gains, sums, and JavaScript recipes provide live value previews. Integrators and other simulation placeholders do not simulate a numerical system.
 
+## Shared project modules and computation blocks
+
+Open **Project modules → New** to create a shared module, or **Import JS** to upload one or more `.js`/`.mjs` files. The Import module block's Properties lets you edit its alias and source or switch to an absolute ES module URL. Functions, classes, methods, and constants appear in the project module catalog after loading. Click an export to create its visual block. A module's exports are shared across the root canvas and every nested canvas.
+
+For a working example, select **Open shared modules example** in the library, or import [`examples/shared-modules.json`](examples/shared-modules.json). It demonstrates matrix multiplication (17, 39), code using the same shared library (42), and an accumulator passed by reference through a nested canvas. **Step** advances it from 10 to 15, then 20, then 25. Opening the example is undoable.
+
+The project execution toolbar provides Live/Pause, Run once, Step, Stop, and Reset. Run once and Step each evaluate one graph tick, including eligible stateful operations. Live recomputes changed pure values; it does not repeat untriggered state mutations. Methods default to execution on Run/Step or trigger. Connect `done` → `trigger` to order operations; chain the `same object` output to pass the same instance. Independent ready blocks execute in stable ID order, so use explicit connections when ordering matters. Constructor blocks retain their instance until constructor arguments change or the project runtime resets.
+
+Argument ports are configurable in **Properties → Argument variables**. The Parameter field accepts a JSON array of defaults for unconnected arguments. Functions use positional arguments; constructors use the same mapping. Method/property blocks require an object connection. Property names are editable. The catalog discovers export names and methods; APIs with default/rest/destructured arguments may require explicit port configuration. An optional exported `milver` object can supply argument hints:
+
+```js
+export function add(a, b) { return a + b; }
+export class Counter {
+  constructor(initial = 0) { this.value = initial; }
+  increment(amount) { this.value += amount; return this.value; }
+}
+export const PI = Math.PI;
+export const milver = {
+  add: { args: ['a', 'b'] },
+  Counter: { args: ['initial'], methods: { increment: { args: ['amount'] } } }
+};
+```
+
+**JS computation** blocks use the same registry and runtime as visual calls. They have a Code tab with input/output variable mappings and source import:
+
+```js
+export async function run({ inputs, modules, state, parameters, tick }) {
+  state.calls = (state.calls ?? 0) + 1;
+  return { result: modules.math.add(inputs.a, inputs.b) };
+}
+```
+
+Return an object keyed by output variables, or a value for a single output. `state` survives invocations until Reset. Select On Run/Step or trigger for code that mutates state; Pure code may be cached. Parameters are parsed JSON. Set **Module aliases used** to declare dependencies, or leave it empty to expose all project aliases. Normal source imports may also reference project aliases. Shared computation code runs without a DOM; existing DOM masks use their separate `mount` API.
+
+Modules are evaluated once per runtime generation. Uploaded files are embedded in JSON, and sibling relative imports (for example `./helpers.js`) resolve using their saved filenames. Remote ES modules and their relative imports need CORS. Literal dynamic imports work; expression-based dynamic imports and circular local module graphs currently report a loading error. Browser-compatible ESM is supported, rather than arbitrary Node.js packages. The loader fetches remote dependencies without credentials. Pin remote versions or embed source when reproducibility/offline use matters.
+
+Class instances, functions, typed arrays, and large tensors remain in the shared worker. Connections pass actual values/references inside that runtime, preserving prototypes and identity. The canvas receives bounded previews (at most 32 × 32 cells per tensor slice), metadata, timings, and errors. Ordinary JSON serialization does not save live instances, closures, tensors, or optimizer state; rebuilding a saved project reconstructs its runtime. Explicit model checkpoints/GPU backends are future work. Structural/code/module edits restart the runtime; layout, title, selection, and visual edits preserve its instances.
+
+The runtime worker is hosted by an opaque-origin sandboxed frame, outside the editor's DOM/storage context. Stop terminates the worker even if user code is stuck in a synchronous loop; a subsequent Run starts a fresh runtime. Project blocks share one trust boundary. Network access is available to module code, so this is not a network-denial sandbox. The current opaque worker is a CPU/Wasm execution baseline; access to secure-context APIs such as WebGPU requires further work. Existing standalone diagrams continue to open without project modules.
+
+Native datatype/source recipes can feed shared computations even inside hidden nested canvases. Edited/custom DOM masks still execute only while their canvas is mounted; use JS computation blocks for project-wide execution. Custom mask code can publish distinct equal-payload triggers through `emitEvent(value, port)`, while ordinary `emit` publishes value changes.
+
+`npm run dev` and `npm run build` generate the isolated worker bundle from `src/project/worker.ts`. Restart the dev command after editing worker source so its generated bundle is refreshed. Project imports, operations, aliases, argument mappings, source, and nested wiring all round-trip through diagram JSON and undo/redo; execution values and UI interaction state remain transient.
+
 ## Programmable JS masks
 
 The library contains **JavaScript datatypes** (Number, Boolean, String, Vector, Matrix, Tensor), **JavaScript sources** (Clock, Trigger, Slider, Selector, Button), and **JavaScript code blocks** (DOM, LaTeX, Three.js, WebAssembly). Select a block and open **Code** to edit source, import a `.js`/`.mjs` file, map ports to named variables, or add module dependencies. Python uses the same source editor and stores code without executing it.
 
-Drag a code block by its header or mask to move it; click to select it. Click **Interact** to operate a slider, selector, button, or custom mask, then **Done** to return to dragging. The small header chevron collapses the type breadcrumb. Snap guides appear while a port is magnetized to an alignment position.
+Drag a code block by its header or mask to move it; click to select it. Click the pointer icon at the bottom right of a JavaScript block to operate a slider, selector, button, or custom mask; click its checkmark to return to dragging. The icon stays at 30% opacity until hovered or keyboard-focused. The small header chevron collapses the type breadcrumb. Snap guides appear while a port is magnetized to an alignment position.
 
 ```js
 export default function mount({ element, inputs, variables, value, emit, setValue, modules }) {
@@ -161,7 +205,7 @@ export default function mount({ element, inputs, variables, value, emit, setValu
 
 `setValue(string)` updates the block's saved parameter. Slider positions, selector choices, and button click counts use it, so they survive reload, JSON export/import, and undo/redo. Clock periods are milliseconds (minimum 16 ms); clocks emit successive tick counts and dispose their timers when removed. Trigger counts false-to-true input transitions. Clock ticks and other emitted signal values are transient; they are not stored as execution state.
 
-A module can return a cleanup function or `{ update(inputs, value, variables), destroy() }`. Without `update`, changes dispose and remount the mask. The opaque-origin iframe uses `sandbox="allow-scripts"` and cannot access the editor DOM or local storage. Hiding mask content keeps its runtime mounted. This is a current-canvas value preview; feedback cycles remain unresolved, and execution does not cross parent-canvas boundaries.
+A module can return a cleanup function or `{ update(inputs, value, variables), destroy() }`. Without `update`, changes dispose and remount the mask. The opaque-origin iframe uses `sandbox="allow-scripts"` and cannot access the editor DOM or local storage. Hiding mask content keeps its runtime mounted. Standalone mask previews operate in the current canvas. Shared computation projects execute nested interfaces through the project runtime; uncontrolled feedback cycles report an error.
 
 **Module imports:** use normal absolute URL `import` statements in code, or add an ES module URL / upload module source under **Code → Modules**. Visual dependencies are exposed both through browser [import maps](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap) (for example, `import { fn } from 'helper'`) and `modules.helper`. Use bare specifiers when embedded modules import each other. Uploaded source is embedded in diagram JSON and works offline; remote URLs need network access and CORS. The DOM recipe works offline. Three.js requires WebGL; the [KaTeX](https://katex.org/docs/api) and [Three.js](https://threejs.org/manual/pages/creating-a-scene.html) recipes fetch their libraries remotely.
 

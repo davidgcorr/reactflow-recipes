@@ -1,3 +1,4 @@
+import { parseModules, parseOperation, defaultComputeSource, type Operation, type ProjectModule } from './project/schema';
 import { parseCodeFields, validVariable, type ModuleDependency, type WasmConfig, type RendererConfig } from './code-config';
 import type { Edge, Node, Viewport } from '@xyflow/react';
 
@@ -11,6 +12,8 @@ export type BlockData = {
   label: string; kind: string; description: string; color: string; value: string; ports: Port[];
   visuals?: BlockVisuals;
   module?: string;
+  projectModuleId?: string;
+  operation?: Operation;
   recipe?: string;
   dependencies?: ModuleDependency[];
   wasm?: WasmConfig;
@@ -20,7 +23,7 @@ export type BlockData = {
   exposedOffset?: number;
 };
 export type BlockNode = Node<BlockData, 'block'>;
-export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings };
+export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings; modules?: ProjectModule[] };
 export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10 };
 export const defaultViewport: Viewport = { x: 80, y: 160, zoom: 1 };
 export const colors = ['#171717', '#404040', '#525252', '#737373', '#a3a3a3', '#d4d4d4'];
@@ -33,13 +36,15 @@ export const templates = [
   { kind: 'custom', label: 'Custom block', description: 'Define your own block', symbol: 'ƒ', value: 'f(x)', inputs: 1, outputs: 1 },
   { kind: 'javascript', label: 'JS module', description: 'A programmable, input-driven mask', symbol: 'JS', value: '1', inputs: 1, outputs: 1 },
   { kind: 'renderer', label: 'Value renderer', description: 'Inspect numbers, vectors, matrices and tensors', symbol: '[ ]', value: '', inputs: 1, outputs: 0 },
+  { kind: 'module', label: 'Import module', description: 'Import functions, classes and constants for the project', symbol: '↓JS', value: '', inputs: 0, outputs: 0 },
+  { kind: 'compute', label: 'JS computation', description: 'Run code in the shared project runtime', symbol: 'ƒ()', value: 'null', inputs: 1, outputs: 1 },
   { kind: 'python', label: 'Python code', description: 'Editable Python source for your own runtime', symbol: 'Py', value: '', inputs: 1, outputs: 1 },
   { kind: 'subsystem', label: 'Parent block', description: 'A canvas inside a block', symbol: '⊞', value: '', inputs: 1, outputs: 1 },
   { kind: 'inport', label: 'Input', description: 'Expose an input on the parent', symbol: '→', value: '', inputs: 0, outputs: 1 },
   { kind: 'outport', label: 'Output', description: 'Expose an output on the parent', symbol: '→', value: '', inputs: 1, outputs: 0 },
 ];
 export function blockTypePath(kind: string): [string, string] {
-  const category = kind === 'javascript' || kind === 'python' ? 'code' : kind === 'subsystem' ? 'canvas' : kind === 'inport' || kind === 'outport' ? 'ports' : 'gens';
+  const category = ['javascript', 'python', 'compute', 'module'].includes(kind) ? 'code' : kind === 'subsystem' ? 'canvas' : kind === 'inport' || kind === 'outport' ? 'ports' : 'gens';
   const label = kind === 'subsystem' ? 'parent' : kind === 'inport' ? 'input' : kind === 'outport' ? 'output' : kind;
   return [category, label];
 }
@@ -61,6 +66,8 @@ export function makeNode(kind: string, position: { x: number; y: number }, id: s
   ];
   const node: BlockNode = { id, type: 'block', position, width: kind === 'subsystem' ? 200 : 164, height: kind === 'subsystem' ? 140 : 116, data: { label: t.label, kind: t.kind, description: t.description, color: '#171717', value: t.value, ports } };
   if (kind === 'javascript') { node.width = 240; node.height = 190; node.data.module = defaultModule; }
+  if (kind === 'compute') { node.width = 240; node.height = 150; node.data.module = defaultComputeSource; node.data.operation = { type: 'code', effect: 'pure' }; node.data.ports[0].variable = 'input1'; node.data.ports[1].id = 'result'; node.data.ports[1].variable = 'result'; }
+  if (kind === 'module') { node.width = 220; node.height = 120; }
   if (kind === 'renderer') { node.width = 280; node.height = 210; node.data.renderer = { precision: 4, slice: 0 }; }
   if (kind === 'python') { node.width = 240; node.height = 190; node.data.module = `def process(inputs, value):
     return inputs.get('in-0', value)
@@ -110,7 +117,7 @@ export function updateCanvas<T extends Canvas>(root: T, path: string[], transfor
 function serializeCanvas(canvas: Canvas): Canvas {
   return { viewport: canvas.viewport, nodes: canvas.nodes.map(({ id, type, position, width, height, data }) => ({ id, type, position, width: width ?? 164, height: height ?? 116, data: { ...data, ...(data.canvas ? { canvas: serializeCanvas(data.canvas) } : {}) } })), edges: canvas.edges.map(({ id, source, target, sourceHandle, targetHandle, type, data }) => ({ id, source, target, sourceHandle, targetHandle, type: type ?? 'smoothstep', ...(data ? { data } : {}) })) };
 }
-export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...serializeCanvas(diagram) }, null, 2); }
+export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...(diagram.modules ? { modules: diagram.modules } : {}), ...serializeCanvas(diagram) }, null, 2); }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSide = (v: unknown): v is Side => ['left', 'right', 'top', 'bottom'].includes(String(v));
@@ -136,6 +143,9 @@ export function parseDiagram(json: string): Diagram {
         portIds.add(p.id); ports.push({ id: p.id, name: p.name, type: p.type as Port['type'], side: p.side, ...(p.offset !== undefined ? { offset: p.offset } : {}), ...(p.variable !== undefined ? { variable: p.variable } : {}) });
       }
       const data: BlockData = { label: b.label as string, kind: b.kind as string, description: b.description as string, color: b.color as string, value: b.value as string, ports, ...parseCodeFields(b, ports) };
+      if (b.operation !== undefined) data.operation = parseOperation(b.operation);
+      if (b.kind === 'compute' && !data.operation) throw new Error('Computation blocks need an operation.');
+      if (b.projectModuleId !== undefined) { if (typeof b.projectModuleId !== 'string' || !b.projectModuleId || b.projectModuleId.length > 128) throw new Error('Invalid project module reference.'); data.projectModuleId = b.projectModuleId; }
       if (b.module !== undefined) { if (typeof b.module !== 'string' || b.module.length > 100000) throw new Error('Invalid code module.'); data.module = b.module; }
       if (b.visuals !== undefined) {
         if (!record(b.visuals)) throw new Error('Invalid block visuals.');
@@ -177,7 +187,7 @@ export function parseDiagram(json: string): Diagram {
     if (!record(t) || (t.mode !== 'light' && t.mode !== 'dark') || !finite(t.hue) || t.hue < 0 || t.hue > 360 || !finite(t.chroma) || t.chroma < 0 || t.chroma > 0.22 || !finite(t.radius) || t.radius < 0 || t.radius > 20) throw new Error('Invalid theme: expected mode, hue 0–360, chroma 0–0.22, radius 0–20.');
     theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius };
   }
-  return { version: 1, name: d.name, ...(theme ? { theme } : {}), ...parseCanvas(d, 0) };
+  return { version: 1, name: d.name, ...(theme ? { theme } : {}), ...(d.modules !== undefined ? { modules: parseModules(d.modules) } : {}), ...parseCanvas(d, 0) };
 }
 
 export function parseFlowSettings(value: unknown): FlowSettings {
