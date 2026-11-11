@@ -1,5 +1,5 @@
 import { operatorRecipes, sinkRecipes, numericRender } from './operator-recipes';
-import { defaultLogic } from './block-code';
+import { defaultLogic, completeFunction } from './block-code';
 import { makeNode, type BlockNode } from './model';
 import { moduleRecipes } from './module-recipes';
 
@@ -82,7 +82,9 @@ export function applyJsRecipe(node: BlockNode, name: string): BlockNode {
     ...Array.from({ length: recipe.outputs }, (_, i) => ({ id: `out-${i}`, name: 'out', type: 'output' as const, side: 'right' as const, variable: `output${i + 1}` })),
   ];
   const { render: _render, state: _state, ...data } = node.data;
-  return { ...node, data: { ...data, kind: 'javascript', recipe: name, label: recipe.label, module: recipe.source, ...('render' in recipe ? { render: recipe.render as string, state: {} } : {}), value: recipe.value, ports, ...(name in splitRecipes ? { module: splitRecipes[name].logic, render: '// Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n' + splitRecipes[name].render, state: {} } : {}), ...(name === 'DOM' ? { module: defaultLogic, render: "// state.result: value computed in Code. Tune the content and typography below.\nelement.textContent = String(state.result ?? '');", state: {} } : {}), ...(name === 'WebAssembly' ? { wasm: { filename: 'add.wasm', base64: exampleWasm, exportName: 'add' } } : {}) } };
+  const result: BlockNode = { ...node, data: { ...data, kind: 'javascript', recipe: name, label: recipe.label, module: recipe.source, ...('render' in recipe ? { render: recipe.render as string, state: {} } : {}), value: recipe.value, ports, ...(name in splitRecipes ? { module: splitRecipes[name].logic, render: '// Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n' + splitRecipes[name].render, state: {} } : {}), ...(name === 'DOM' ? { module: defaultLogic, render: "// state.result: value computed in Code. Tune the content and typography below.\nelement.textContent = String(state.result ?? '');", state: {} } : {}), ...(name === 'WebAssembly' ? { wasm: { filename: 'add.wasm', base64: exampleWasm, exportName: 'add' } } : {}) } };
+  if (result.data.render !== undefined) { result.data.module = completeFunction(result.data.module ?? '', 'run'); result.data.render = completeFunction(result.data.render, 'render'); }
+  return result;
 }
 export function makeJsNode(name: string, position: { x: number; y: number }, id?: string) { return applyJsRecipe(makeNode('javascript', position, id), name); }
 
@@ -211,7 +213,7 @@ emit(state.result);
 await render();`,
     render: `// state.result: input squared in Code. latex() uses bundled KaTeX / MathML.
 // Change the expression here; computations and emitted outputs stay in Code.
-latex(element, 'f(x) = x^2 = ' + state.result);`,
+return latex(element, 'f(x) = x^2 = ' + state.result);`,
   },
   WebAssembly: {
     logic: `if (!wasm) throw new Error('Import a .wasm binary in Code.');

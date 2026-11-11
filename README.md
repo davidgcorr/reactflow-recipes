@@ -35,7 +35,7 @@ Open `http://localhost:4173/reactflow-recipes/`.
 - The project title can be edited beside the milver wordmark at the top left.
 - The top-left button opens/closes the floating block library. The **Blocks** tab starts with Sources, followed by Operators & functions, JavaScript, Sinks, Structure and Python. Tiles preview input and output ports. **My Blocks** stores reusable JavaScript blocks and includes examples. The **Libraries** tab manages project-wide JavaScript packages without creating canvas blocks. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Drag the left edge of the right panel to resize it; the width is saved locally. Keyboard users can focus its separator and use the arrow keys.
 - Canvas tools float at the bottom; the canvas hierarchy shows a home icon at the top and parent block names inside nested canvases. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
-- Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
+- Drag a block from the library to place it. Clicking a library item adds a block near the viewport center. Double-click a JavaScript block to use its controls; click outside it to return to dragging.
 - Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Properties** (names, values, descriptions, ports), **Render** (appearance and the render function), **Code** (logic, port mappings and runtime feedback), and **JSON** (editable block data) tabs.
 - Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed with its chevron and restored using the chevron on hover or **Render → Type breadcrumb**.
 - Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Hover over a port for one second, then drag the small grip beside it to move it along any border; drag the circular port itself to connect wires. Focus a grip and use arrow keys for fine adjustment. Ports magnetize to the center and evenly spaced positions on their destination border. Port names appear only while hovering over that port. Custom positions, including parent interfaces, are saved in JSON and used in exports. Move a port and its connections follow it.
@@ -146,21 +146,25 @@ Libraries are exposed to every mounted JavaScript block, including its render fu
 
 ## JavaScript logic and rendering
 
-**JavaScript → Module** creates a block with two editable function bodies. The lifecycle adapter is supplied by the editor.
+**JavaScript → Module** creates a block with two complete editable functions. The lifecycle adapter is supplied by the editor.
 
 **Code** controls inputs, state and outputs:
 
 ```js
-state.result = modules.math.multiply(inputs.input1 ?? Number(value), 2);
-emit(state.result, 'output1');
-await render();
+async function run() {
+  state.result = modules.math.multiply(inputs.input1 ?? Number(value), 2);
+  emit(state.result, 'output1');
+  await render();
+}
 ```
 
 **Render** controls the block content:
 
 ```js
-element.textContent = String(state.result);
-element.style.font = '24px system-ui';
+async function render() {
+  element.textContent = String(state.result);
+  element.style.font = '24px system-ui';
+}
 ```
 
 Both functions can access `inputs`, `variables`, `state`, `value`, `modules`, and `setProperty`. `inputs` contains port IDs and named aliases; expand **Port variables** in Code to change the mappings. `emit(value, outputIdOrVariable)` defaults to the first output. `emitEvent(value, port)` publishes a distinct event even when its payload is unchanged. Outputs and state accept bounded JSON values, including numeric arrays and shaped tensors; functions, cycles, nonfinite numbers and oversized values are rejected.
@@ -206,7 +210,7 @@ Open **My Blocks → Open transformer forward model**, or import [`examples/tran
 
 ## Existing project compatibility
 
-Saved version-1 diagrams continue to load. Existing JavaScript blocks without `data.render` retain their `export default function mount(...)` lifecycle and embedded dependencies. Their Code tab identifies this API. New blocks use the separate logic/render model above.
+Saved version-1 diagrams continue to load. Existing JavaScript blocks without `data.render` retain their `export default function mount(...)` lifecycle and embedded dependencies. Their Code tab identifies this API. New blocks save complete `async function run() { ... }` and `async function render() { ... }` declarations. Earlier body-only source is adapted when shown in the editor and remains executable.
 
 Older Import module, function, constructor, method, property and JS computation nodes remain supported when loaded from JSON; they are no longer generated from library imports. [`examples/shared-modules.json`](examples/shared-modules.json) demonstrates this earlier shared worker API, including live class instances, nested interface routing, and Run/Step execution. Its computation code exports `run({ inputs, modules, state, parameters, tick })`. That worker state and live instances are transient; the new JavaScript block state is saved explicitly in `data.state`.
 

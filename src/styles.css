@@ -130,7 +130,7 @@
 .breadcrumbs{justify-content:safe center;min-width:46px;max-width:max(46px,calc(100% - 900px))}
 .library-category{margin:14px 10px 0;border-bottom:1px solid var(--border);padding-bottom:8px}
 .library-category:last-of-type{border-bottom:0}
-.category-toggle{display:flex;align-items:center;gap:7px;width:100%;padding:8px 3px;text-align:left;color:var(--muted-foreground);font-size:10px;font-weight:550}
+.category-toggle{display:flex;align-items:center;justify-content:flex-start;gap:7px;width:100%;padding:8px 3px;text-align:left;color:var(--muted-foreground);font-size:10px;font-weight:550}
 .category-toggle svg{width:13px;height:13px;transition:transform .15s}
 .category-toggle[data-state=closed] svg{transform:rotate(-90deg)}
 .palette-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:4px 0}
@@ -138,7 +138,7 @@
 .palette-tile:hover{border-color:var(--border)}
 .palette-tile:active{cursor:grabbing}
 .palette-tile>span:last-child{font-size:9px;line-height:1.35;text-align:center;font-weight:450}
-.palette-tile .palette-glyph{width:34px;height:34px;font-size:20px}
+.palette-tile .palette-glyph{width:40px;height:34px;font:600 12px ui-monospace,monospace;letter-spacing:-.4px;flex-shrink:0;white-space:nowrap}
 .category-empty{font-size:10px;color:var(--muted-foreground);padding:8px}
 
 .port-anchor{position:absolute;z-index:5;pointer-events:auto;overflow:visible}
@@ -189,10 +189,6 @@
 .block-type-trail .type-collapse svg{opacity:inherit}
 .module-mask{pointer-events:none}
 .module-mask.mask-interactive{pointer-events:auto}
-.mask-interaction-toggle{position:absolute;right:7px;bottom:7px;z-index:3;display:grid;place-items:center;width:24px;height:24px;padding:4px;border:1px solid var(--border);border-radius:4px;background:var(--card);color:var(--muted-foreground);opacity:.3;transition:opacity .15s}
-.mask-interaction-toggle:hover,.mask-interaction-toggle:focus-visible{opacity:1}
-.mask-interaction-toggle.is-interacting{color:var(--primary);border-color:var(--primary)}
-.mask-interaction-toggle svg{width:14px;height:14px;pointer-events:none}
 .port-snap-guide{position:absolute;pointer-events:none;z-index:7;border-color:#0284c7;border-style:dashed;opacity:.65}
 .port-snap-guide.horizontal{left:0;right:0;border-width:1px 0 0}
 .port-snap-guide.vertical{top:0;bottom:0;border-width:0 0 0 1px}
@@ -240,7 +236,7 @@
 @media(max-width:500px){.execution-island{bottom:109px}.project-runtime-error{bottom:155px}}
 .load-project-example{width:100%;height:auto;white-space:normal;font-size:10px;margin:2px 0 6px;padding:5px}
 
-.library-tabs { position: sticky; top: 0; z-index: 2; background: var(--card); padding-top: 4px; }
+.library-tabs { position: sticky; top: 0; z-index: 2; background: var(--card); padding-top: 14px; }
 .tab-count { margin-left: 7px; font: 10px ui-monospace, monospace; background: var(--secondary); padding: 2px 5px; border-radius: 4px; }
 .project-libraries { padding: 6px 14px 18px; }
 .library-intro h3 { font-size: 13px; font-weight: 600; margin: 8px 0; }
@@ -283,3 +279,14 @@ input:disabled, textarea:disabled { opacity: .5; cursor: not-allowed; }
 @media(max-width:650px){.resizable-inspector{width:calc(100vw - 32px)!important}.inspector-resize-handle{display:none}}
 .forward-example-button{width:100%;margin-bottom:12px;font-size:10px}
 .saved-block-symbol{position:relative;margin:0 4px}
+/* Palette headings and tabs share one inset, independent of button defaults. */
+.library-panel .category-toggle{justify-content:flex-start;text-align:left}
+.library-panel .library-tabs{padding:14px 12px 0;gap:10px}
+.library-panel .library-tabs button{padding:0 3px 11px;line-height:18px}
+.palette-glyph{min-width:0;isolation:isolate}.palette-glyph>svg{max-width:22px;max-height:22px}
+.block-editing{outline:1px solid var(--primary);outline-offset:3px}
+.value-renderer{min-width:0;min-height:0;gap:8px;padding:12px}
+.matrix-viewport{flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;position:relative}
+.matrix-fit{position:relative;flex-shrink:0}.matrix-content{position:absolute;top:0;left:0;width:max-content;transform-origin:top left;padding:3px 9px;border-left:1.5px solid currentColor;border-right:1.5px solid currentColor;border-radius:3px}
+.value-renderer .matrix-content table{border-collapse:separate;border-spacing:3px}
+.value-renderer .matrix-content td{border:0;border-radius:3px;padding:5px 9px;font-size:12px;font-variant-numeric:tabular-nums;min-width:28px;background:var(--muted)}

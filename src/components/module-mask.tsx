@@ -63,7 +63,7 @@ try {
 </script></body></html>`;
 }
 let renderBundle: Promise<string> | undefined;
-const loadRenderBundle = () => renderBundle ??= import('../../public/block-ui.js?raw').then(module => module.default);
+export const loadRenderBundle = () => renderBundle ??= import('../generated/block-ui.js?raw').then(module => module.default).catch(error => { renderBundle = undefined; throw error; });
 export function ModuleMask({ id, source, render, state, value, color, background, ports, dependencies, wasm, interactive = false }: { id: string; source?: string; render?: string; state?: BlockData['state']; value: string; color: string; background: string; ports: Port[]; dependencies?: ModuleDependency[]; wasm?: WasmConfig; interactive?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const { values, emit, setValue, saveState, setProperty, report } = useContext(PreviewContext);
@@ -81,11 +81,12 @@ export function ModuleMask({ id, source, render, state, value, color, background
   }, [source, render]);
   const needsUI = /React\.createElement|\blatex\s*\(/.test(code);
   const [uiSource, setUISource] = useState<string>();
-  useEffect(() => { if (needsUI) void loadRenderBundle().then(setUISource).catch(error => report(id, String(error))); }, [needsUI, id, report]);
+  const [uiError, setUIError] = useState('');
+  useEffect(() => { let active = true; if (needsUI) void loadRenderBundle().then(source => { if (active) { setUISource(source); setUIError(''); } }).catch(error => { if (active) { setUIError('Could not load renderer.'); report(id, String(error)); } }); return () => { active = false; }; }, [needsUI, id, report]);
   const document = useMemo(() => {
     const token = crypto.randomUUID();
-    return { token, source: needsUI && !uiSource ? '<!doctype html><html><body style="font:11px system-ui;color:#737373">Loading renderer…</body></html>' : moduleDocument(code, { ...JSON.parse(settings), state: initialState.current, ...(needsUI ? { uiSource } : {}), token }) };
-  }, [code, settings, needsUI, uiSource]);
+    return { token, source: needsUI && !uiSource ? `<!doctype html><html><body style="font:11px system-ui;color:#737373">${uiError || 'Loading renderer…'}</body></html>` : moduleDocument(code, { ...JSON.parse(settings), state: initialState.current, ...(needsUI ? { uiSource } : {}), token }) };
+  }, [code, settings, needsUI, uiSource, uiError]);
   const latest = useRef({ inputs, value, color, background, state }); latest.current = { inputs, value, color, background, state: stateInput };
   const token = useRef(document.token); token.current = document.token;
   useEffect(() => {
@@ -104,5 +105,5 @@ export function ModuleMask({ id, source, render, state, value, color, background
     window.addEventListener('message', receive); return () => window.removeEventListener('message', receive);
   }, [id, emit, setValue, saveState, setProperty, report, settings]);
   useEffect(() => { frame.current?.contentWindow?.postMessage({ type: 'mask-input', inputs: JSON.parse(inputs), state: stateInput, value, color: frame.current ? getComputedStyle(frame.current).color : color, background }, '*'); }, [inputs, state, value, color, background, document]);
-  return <iframe ref={frame} title="JavaScript block mask" className={`module-mask ${interactive ? 'mask-interactive nodrag nopan nowheel' : ''}`} tabIndex={interactive ? 0 : -1} sandbox="allow-scripts" srcDoc={document.source}/>;
+  return <iframe key={document.token} ref={frame} title="JavaScript block mask" className={`module-mask ${interactive ? 'mask-interactive nodrag nopan nowheel' : ''}`} tabIndex={interactive ? 0 : -1} sandbox="allow-scripts" srcDoc={document.source}/>;
 }

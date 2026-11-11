@@ -14,7 +14,7 @@ if (result && Array.isArray(result.shape)) {
 while (Array.isArray(result?.[0]?.[0])) result = result[0];
 const tex = typeof result === 'number' ? format(result)
   : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw\`\\text{Connect a numeric input}\`;
-latex(element, prefix + tex);`;
+return latex(element, prefix + tex);`;
 
 const definitions = [
   ['MatMul', 'Matrix multiply', 'AB', 'matmul', 2, { a: [[1,2],[3,4]], b: [[1],[2]] }],
