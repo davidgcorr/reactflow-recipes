@@ -1,6 +1,6 @@
 import type { ProjectPlan, RuntimeNode } from './graph';
 import type { Namespace } from './loader';
-import type { Signal, Signals } from '../runtime';
+import { isSignal, type Signal, type Signals } from '../runtime';
 export type ExportInfo = { name: string; kind: 'function' | 'class' | 'value'; args: string[]; methods: { name: string; args: string[] }[] };
 export type ModuleInfo = { id: string; alias: string; exports: ExportInfo[] };
 export type NodeResult = { inputs: Signals; outputs: Signals; status: 'ok' | 'idle' | 'blocked' | 'error'; error?: string; ms: number; cached: boolean };
@@ -69,12 +69,14 @@ export class ProjectEngine {
     if (typeof value === 'boolean') return value;
     if (typeof value === 'bigint') return String(value);
     if (typeof value !== 'object' && typeof value !== 'function') return String(value);
+    if (Array.isArray(value) && isSignal(value)) return value;
     const identity = this.identity(value);
     const ref = `${this.generation}/${identity.split(':')[0]}`;
     if (depth > 2) return { $ref: ref, type: 'Object' };
     const descriptors = Object.getOwnPropertyDescriptors(value);
     const tensorShape = descriptors.shape?.value, tensorData = descriptors.data?.value;
     const shaped = Array.isArray(tensorShape) && (Array.isArray(tensorData) || ArrayBuffer.isView(tensorData));
+    if (shaped && Array.isArray(tensorData) && isSignal(value)) return value;
     const shape: number[] = [];
     let first: unknown = value;
     if (shaped) shape.push(...(tensorShape as number[]).slice(0, 12));

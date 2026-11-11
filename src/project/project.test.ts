@@ -71,7 +71,7 @@ describe('shared graph execution', () => {
     const call = op('matmul', 'function', ['a', 'b']); call.data.value = '[[[1,2],[3,4]],[[5],[6]]]';
     const constant = op('EPSILON', 'value');
     const { engine, plan } = await prepare(diagram([call, constant])); const result = await engine.execute(plan);
-    expect(output(result, 'matmul')).toMatchObject({ type: 'Matrix', shape: [2, 1], rows: [[17], [39]] });
+    expect(output(result, 'matmul')).toEqual([[17], [39]]);
     expect(output(result, 'EPSILON')).toBe(1e-6);
     const snapshot = engine.snapshot(new Float32Array(1000000)); expect(snapshot).toMatchObject({ type: 'Float32Array', shape: [1000000] }); expect(JSON.stringify(snapshot).length).toBeLessThan(1000);
   });
@@ -168,7 +168,7 @@ describe('shared graph execution', () => {
     const a = op('add', 'function', ['a', 'b']); a.id = 'a'; const b = op('add', 'function', ['a', 'b']); b.id = 'b';
     const cyclic = await prepare(diagram([a, b], [wire('a', 'b'), wire('b', 'a')])); const result = await cyclic.engine.execute(cyclic.plan); expect(Object.values(result.nodes).some(n => n.error?.includes('Cycle'))).toBe(true);
     const bad = op('matmul', 'function', ['a', 'b']); bad.data.value = '[[[1,2]],[[1]]]'; const runtime = await prepare(diagram([bad])); expect((await runtime.engine.execute(runtime.plan)).nodes[nodeKey([], bad.id)].status).toBe('error');
-    bad.data.value = '[[[1,2]],[[1],[2]]]'; expect(output(await runtime.engine.execute(compileProject(diagram([bad]))), bad.id)).toMatchObject({ rows: [[5]] });
+    bad.data.value = '[[[1,2]],[[1],[2]]]'; expect(output(await runtime.engine.execute(compileProject(diagram([bad]))), bad.id)).toEqual([[5]]);
   });
   it('reuses pure computations and disposes instances once on reset', async () => {
     const dispose = vi.fn(); const call = vi.fn((a: number) => a * 2); class Box { dispose = dispose; }
@@ -183,7 +183,7 @@ describe('project persistence contract', () => {
   it('executes and round trips the bundled nested shared-instance example', async () => {
     const project = sharedModulesExample(); expect(parseDiagram(serializeDiagram(project))).toEqual(project);
     const { engine, plan } = await prepare(project); const live = await engine.execute(plan);
-    expect(live.nodes[nodeKey([], 'matrix-view')].inputs['in-0']).toMatchObject({ rows: [[17], [39]] });
+    expect(live.nodes[nodeKey([], 'matrix-view')].inputs['in-0']).toEqual([[17], [39]]);
     expect(output(live, 'shared-code')).toBe(42);
     const step = await engine.execute(plan, {}, 'step'); expect(step.nodes[nodeKey([], 'instance-view')].inputs['in-0']).toBe(15);
     expect((await engine.execute(plan, {}, 'step')).nodes[nodeKey([], 'instance-view')].inputs['in-0']).toBe(20);
@@ -201,4 +201,17 @@ describe('project persistence contract', () => {
     const legacy = exampleDiagram(); delete legacy.modules;
     expect(parseDiagram(serializeDiagram(legacy)).modules).toBeUndefined();
   });
+});
+
+it('loads the bundled TensorFlow module and keeps plain arrays usable by JS blocks',async()=>{
+  const {mathLibrary}=await import('../default-libraries');
+  const l=loader([mathLibrary]),modules=await l.load();
+  expect((modules.math.matmul as Function)([[1,2]],[[3],[4]])).toEqual([[11]]);
+  expect(modules.tf).toBe(modules.math.tf);
+  const source=makeNode('constant',{x:0,y:0},'array-source');source.data.value='[[1,2],[3,4]]';
+  const plan=compileProject(diagram([source],[],[mathLibrary]));
+  const engine=new ProjectEngine(modules,[mathLibrary]);
+  const result=await engine.execute(plan);
+  expect(result.nodes[nodeKey([],'array-source')].outputs['out-0']).toEqual([[1,2],[3,4]]);
+  await engine.dispose();l.dispose();
 });

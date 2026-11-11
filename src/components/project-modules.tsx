@@ -22,7 +22,13 @@ export function ProjectModules() {
     <Field label="ES module URL"><Input aria-label="Library URL" placeholder="https://esm.sh/package@version" value={url} onChange={e => setUrl(e.target.value)}/></Field>
     <div className="module-toolbar"><Button size="sm" onClick={() => attempt(() => { if (!url.trim()) throw new Error('Enter an ES module URL.'); if (!validVariable(alias)) throw new Error('Enter a JavaScript alias.'); createModule('', alias, url); setUrl(''); })}><Plus/>Add URL</Button><Button variant="outline" size="sm" onClick={() => file.current?.click()}><FileUp/>Import JS</Button><Button variant="ghost" size="sm" onClick={() => attempt(() => createModule('export const example = 42;', alias))}>New</Button></div>
     <input hidden ref={file} type="file" accept=".js,.mjs" multiple onChange={async e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; try { for (const f of files) { if (f.size > 100000) throw new Error('Module exceeds 100 KB.'); createModule(await f.text(), f.name); } setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}/></div>
-    <details className="builtin-library"><summary>Included render libraries</summary><p>React, shadcn Button / Slider / Select and KaTeX are bundled locally and available in Render. Use JSX or <code>latex(element, tex)</code>. No URL imports needed.</p></details>
+    <details className="builtin-library"><summary>Included libraries</summary><div className="builtin-library-cards">{[
+      ['React', 'JSX rendering and component state', 'https://react.dev'],
+      ['shadcn/ui', 'Button, Slider and Select components', 'https://ui.shadcn.com'],
+      ['Radix UI', 'Accessible control primitives', 'https://www.radix-ui.com'],
+      ['KaTeX', 'Accessible mathematical typesetting', 'https://katex.org'],
+      ['TensorFlow.js', 'Tensor operations · bundled CPU backend · modules.tensorMath / modules.tf', 'https://www.tensorflow.org/js'],
+    ].map(([name,description,url]) => <a key={name} className="builtin-library-card" href={url} target="_blank" rel="noreferrer"><strong>{name}</strong><span>{description}</span><small>{url}</small></a>)}</div></details>
     <div className="library-list-heading"><span>Project scope</span><span>{modules.length} imported</span></div>
     {!modules.length && <div className="library-empty">No libraries yet.<p>Add an ES module URL or upload JavaScript to get started.</p></div>}
     {modules.map(module => <LibraryEditor key={module.id} module={module} save={next => attempt(() => updateModule(next))} remove={() => removeModule(module.id)}/>)}
@@ -32,6 +38,7 @@ export function ProjectModules() {
 function LibraryEditor({ module, save, remove }: { module: import('@/project/schema').ProjectModule; save: (module: import('@/project/schema').ProjectModule) => void; remove: () => void }) {
   const [alias, setAlias] = useState(module.alias), [content, setContent] = useState(module.url ?? module.source ?? '');
   useEffect(() => { setAlias(module.alias); setContent(module.url ?? module.source ?? ''); }, [module]);
+  if (module.builtin) return <div className="library-entry builtin-project-library"><div className="section-heading"><strong>{module.alias} · TensorFlow.js</strong><IconButton label={`Remove library ${module.alias}`} size="icon-xs" onClick={remove}><Trash2/></IconButton></div><p>Bundled tensor operations; nested arrays in and out.</p><a href={module.referenceUrl} target="_blank" rel="noreferrer">{module.referenceUrl}</a></div>;
   return <details className="library-entry"><summary><span className="library-entry-icon">JS</span><span><strong>{module.alias}</strong><small>{module.url ? new URL(module.url).hostname : module.filename ?? 'Embedded module'}</small></span><IconButton label={`Remove library ${module.alias}`} size="icon-xs" onClick={e => { e.preventDefault(); remove(); }}><Trash2/></IconButton></summary><div className="library-entry-body">
     <code>modules.{module.alias}</code><Field label="Alias"><Input aria-label={`Alias for ${module.alias}`} value={alias} onChange={e => setAlias(e.target.value)}/></Field>
     <Field label={module.url ? 'Module URL' : 'Module source'}>{module.url ? <Input aria-label={`URL for ${module.alias}`} value={content} onChange={e => setContent(e.target.value)}/> : <CodeEditor label={`Source for ${module.alias}`} value={content} onChange={setContent}/>}</Field>

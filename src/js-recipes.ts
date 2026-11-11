@@ -66,7 +66,7 @@ export const jsRecipes: Record<string, JsRecipe> = {
   String: { label: 'String', symbol: 'abc', category: 'JavaScript datatypes', source: datatype('string'), value: 'Hello', inputs: 0, outputs: 1 },
   Vector: { label: 'Vector', symbol: '[x]', category: 'JavaScript datatypes', source: datatype('vector'), value: '[1,2,3]', inputs: 0, outputs: 1 },
   Matrix: { label: 'Matrix', symbol: '▦', category: 'JavaScript datatypes', source: datatype('matrix'), value: '[[1,2],[3,4]]', inputs: 0, outputs: 1 },
-  Tensor: { label: 'Tensor', symbol: '▧', category: 'JavaScript datatypes', source: datatype('tensor'), value: '{"shape":[2,2,2],"data":[1,2,3,4,5,6,7,8]}', inputs: 0, outputs: 1 },
+  Tensor: { label: 'Tensor', symbol: '▧', category: 'JavaScript datatypes', source: datatype('tensor'), value: '[[[1,2],[3,4]],[[5,6],[7,8]]]', inputs: 0, outputs: 1 },
   Clock: { label: 'Clock', symbol: '◷', category: 'JavaScript sources', source: clock, value: '1000', inputs: 0, outputs: 1 },
   Trigger: { label: 'Trigger', symbol: '↑', category: 'JavaScript sources', source: trigger, value: '', inputs: 1, outputs: 1 },
   Slider: { label: 'Slider', symbol: '☷', category: 'JavaScript sources', source: slider, value: '{"min":0,"max":100,"step":1,"initial":50}', inputs: 0, outputs: 1 },
@@ -96,7 +96,15 @@ const splitRecipes: Record<string, { logic: string; render: string }> = {
     const legacy = datatype(type);
     const validation = legacy.slice(legacy.indexOf('    const result'), legacy.indexOf('    element.textContent'));
     return [type[0].toUpperCase() + type.slice(1), {
-      logic: validation.trim() + '\nstate.result = result;\nemit(result);\nawait render();',
+      logic: ['number', 'vector', 'matrix', 'tensor'].includes(type)
+        ? `await modules.tensorMath.ready;
+const result = modules.tensorMath.parse(value);
+const rank = modules.tensorMath.shape(result).length;
+${type === 'number' ? "if (rank !== 0) throw new Error('Enter a finite number.');" : type === 'vector' ? "if (rank !== 1) throw new Error('Enter a numeric vector.');" : type === 'matrix' ? "if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');" : "if (rank < 1) throw new Error('Enter a nested numeric tensor list.');"}
+state.result = result;
+emit(result);
+await render();`
+        : validation.trim() + '\nstate.result = result;\nemit(result);\nawait render();',
       render: ['number', 'vector', 'matrix', 'tensor'].includes(type) ? numericRender : `// state.result: the validated ${type} source value.
 element.textContent = String(state.result);
 element.style.font = '18px system-ui';`,

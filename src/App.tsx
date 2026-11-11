@@ -1,3 +1,4 @@
+import { copySelection, parseClipboard, pasteSelection, mergeClipboardLibraries, type BlockClipboard } from './clipboard';
 import forwardExample from '../examples/transformer-forward.json?raw';
 import { MyBlocks } from './components/my-blocks';
 import { ResizablePanel } from './components/resizable-panel';
@@ -42,7 +43,7 @@ import { useProjectRuntime } from '@/project/use-project-runtime';
 import type { NodeResult } from '@/project/engine';
 import { nodeKey } from '@/project/graph';
 import { exampleModuleSource, parseModules, type ProjectModule } from '@/project/schema';
-import { themeVariables } from '@/theme';
+import { canvasBackground, themeVariables } from '@/theme';
 
 const nodeTypes = { block: Block };
 const edgeTypes = { recipe: FlowEdge };
@@ -217,7 +218,7 @@ function Editor() {
   const connect = (connection: Connection) => {
     if (validConnection(connection)) editCanvas(c => ({ ...c, edges: addEdge({ ...connection, type: 'smoothstep' }, c.edges) }));
   };
-  const availableTemplates = templates.filter(t => nested || t.kind !== 'inport' && t.kind !== 'outport');
+  const availableTemplates = templates.filter(t => !['python', 'scope'].includes(t.kind)).filter(t => nested || t.kind !== 'inport' && t.kind !== 'outport');
   const addBlock = (kind: string, point?: { x: number; y: number }, recipe?: string) => {
     if (kind === 'module') { createProjectModule(); return; }
     if (!nested && (kind === 'inport' || kind === 'outport')) return;
@@ -233,7 +234,7 @@ function Editor() {
     snapshot();
     const library = exampleLibraries[recipe as keyof typeof exampleLibraries];
     const root = documentRef.current;
-    const modules = recipe && jsRecipes[recipe]?.category === 'Operators' ? withMath(root.modules) : library && !root.modules?.some(m => m.alias === library.alias)
+    const modules = recipe && (jsRecipes[recipe]?.category === 'Operators' || ['Number', 'Vector', 'Matrix', 'Tensor'].includes(recipe)) ? withMath(root.modules) : library && !root.modules?.some(m => m.alias === library.alias)
       ? [...(root.modules ?? []), { id: crypto.randomUUID(), ...library }] : root.modules;
     replace(updateCanvas({ ...root, ...(modules ? { modules } : {}) }, pathRef.current, c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] })));
   };
@@ -317,6 +318,25 @@ function Editor() {
     });
     setActivePort(id);
   };
+  const blockClipboard = useRef<BlockClipboard | undefined>(undefined);
+  const pasteCount = useRef(0);
+  const copyBlocks = () => {
+    const payload = copySelection(canvasAt(documentRef.current, pathRef.current), documentRef.current.modules ?? []);
+    if (!payload) return;
+    blockClipboard.current = payload; pasteCount.current = 0;
+    void navigator.clipboard?.writeText(JSON.stringify(payload)).catch(() => {});
+    notify(`Copied ${payload.canvas.nodes.length} block${payload.canvas.nodes.length === 1 ? '' : 's'}`);
+  };
+  const pasteBlocks = async () => {
+    let payload = blockClipboard.current;
+    try { const text = await navigator.clipboard?.readText(); if (text) payload = parseClipboard(text); } catch { /* The in-app clipboard also works when browser access is unavailable. */ }
+    if (!payload) return;
+    try {
+      const root = documentRef.current, modules = mergeClipboardLibraries(root.modules ?? [], payload.modules);
+      const next = updateCanvas({ ...root, modules }, pathRef.current, c => pasteSelection(c, payload!, 40 * ++pasteCount.current));
+      parseDiagram(serializeDiagram(next)); snapshot(); replace(next); notify('Blocks pasted');
+    } catch (error) { notify(String(error)); }
+  };
   const duplicate = () => {
     if (!selected) return;
     const copy = structuredClone(selected); copy.id = crypto.randomUUID(); copy.position = { x: copy.position.x + 40, y: copy.position.y + 40 };
@@ -348,6 +368,8 @@ function Editor() {
       if ((event.target as HTMLElement).closest('input, textarea, select, [contenteditable="true"], [role="dialog"], [role="listbox"], [role="slider"]') || jsonOpen || helpOpen || exportOpen) return;
       const mod = event.metaKey || event.ctrlKey; const key = event.key.toLowerCase();
       if (mod && key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
+      if (mod && key === 'c') { event.preventDefault(); copyBlocks(); }
+      if (mod && key === 'v') { event.preventDefault(); void pasteBlocks(); }
       if (mod && key === 'd') { event.preventDefault(); duplicate(); }
       if (mod && key === 's') { event.preventDefault(); exportJson(); }
       if (!mod && key === 'v') setMode('select');
@@ -365,7 +387,7 @@ function Editor() {
   }
 
   return <TooltipProvider delayDuration={250}><ProjectContext.Provider value={{ myBlocks: document.myBlocks ?? [], saveBlock, insertSavedBlock, removeSavedBlock: id => { snapshot(); replace({ ...documentRef.current, myBlocks: documentRef.current.myBlocks?.filter(b => b.id !== id) }); }, modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: () => { snapshot(); goTo([]); replace(parseDiagram(forwardExample)); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue, saveState: saveBlockState, setProperty: setCodeProperty, report: reportMask }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
-    <ReactFlow<BlockNode>
+    <ReactFlow<BlockNode> style={{ background: canvasBackground(theme) }}
       nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
       onDragOver={event => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; }}
@@ -382,7 +404,7 @@ function Editor() {
       defaultEdgeOptions={{ type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--muted-foreground)' }, style: { stroke: 'var(--muted-foreground)', strokeWidth: 1.5 } }}
       deleteKeyCode={null} fitView={initial.fit} fitViewOptions={{ padding: 0.35, maxZoom: 1 }} proOptions={{ hideAttribution: true }}
     >
-      <Background variant={BackgroundVariant.Dots} color="var(--grid-color)" gap={20} size={1}/>
+      {theme.showGrid !== false && <Background variant={BackgroundVariant.Dots} color="var(--grid-color)" gap={20} size={1}/>}
       {ui.minimap && <MiniMap className="diagram-minimap" nodeColor="var(--primary)" maskColor="var(--background)" maskStrokeColor="var(--border)" pannable zoomable ariaLabel="Diagram overview"/>}
     </ReactFlow>
 
@@ -408,9 +430,8 @@ function Editor() {
       <div role="tabpanel" id="library-panel-blocks" aria-labelledby="library-tab-blocks" hidden={libraryTab !== 'blocks'}>
         {nested && <div className="nested-library-note"><Network/><span>Input and Output blocks define<br/>this parent's external ports.</span></div>}
         {[
-          ...['Sources', 'Operators & functions', 'JavaScript', 'Sinks'].map(title => ({ title, items: Object.entries(jsRecipes).filter(([name, t]) => title === 'Sources' ? ['JavaScript datatypes', 'JavaScript sources'].includes(t.category) : title === 'Operators & functions' ? t.category === 'Operators' : title === 'Sinks' ? t.category === 'Sinks' : ['DOM', 'WebAssembly'].includes(name)).map(([recipe, t]) => ({ ...templates.find(t => t.kind === 'javascript')!, label: t.label, symbol: t.symbol, inputs: t.inputs, outputs: t.outputs, description: `${t.label} · JavaScript`, recipe })).concat(availableTemplates.filter(t => title === 'Sinks' ? ['renderer', 'scope'].includes(t.kind) : false).map(t => ({ ...t, recipe: '' }))) })),
+          ...['Sources', 'Operators & functions', 'JavaScript', 'Sinks'].map(title => ({ title, items: Object.entries(jsRecipes).filter(([name, t]) => title === 'Sources' ? ['JavaScript datatypes', 'JavaScript sources'].includes(t.category) : title === 'Operators & functions' ? t.category === 'Operators' : title === 'Sinks' ? t.category === 'Sinks' && name !== 'MathView' : ['DOM', 'WebAssembly'].includes(name)).map(([recipe, t]) => ({ ...templates.find(t => t.kind === 'javascript')!, label: t.label, symbol: t.symbol, inputs: t.inputs, outputs: t.outputs, description: `${t.label} · JavaScript`, recipe })).concat(availableTemplates.filter(t => title === 'Sinks' ? t.kind === 'renderer' : false).map(t => ({ ...t, recipe: '' }))) })),
           { title: 'Structure', items: availableTemplates.filter(t => ['subsystem', 'inport', 'outport'].includes(t.kind)).map(t => ({ ...t, recipe: '' })) },
-          { title: 'Python code blocks', items: availableTemplates.filter(t => t.kind === 'python').map(t => ({ ...t, recipe: '' })) },
         ].map(category => <Collapsible key={category.title} defaultOpen className="library-category"><CollapsibleTrigger asChild><Button variant="ghost" size="sm" className="category-toggle"><ChevronDown/><span>{category.title}</span></Button></CollapsibleTrigger><CollapsibleContent><div className="palette-grid">{category.items.map(t => <Button key={t.recipe || t.kind} variant="ghost" className="palette-tile" draggable onDragStart={e => { e.dataTransfer.setData('application/milver', t.kind); e.dataTransfer.setData('application/milver-recipe', t.recipe); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind, undefined, t.recipe)} title={t.description}><span className={`palette-glyph ${t.outputs > 0 ? 'palette-source' : ''}`}>{t.kind === 'subsystem' ? <Network/> : t.symbol}{t.inputs > 0 && <i className="palette-input" aria-label="Accepts input"/>}{t.outputs > 0 && <i className="palette-output" aria-label="Produces output"/>}</span><span>{t.label}</span></Button>)}</div>{!category.items.length && <p className="category-empty">No blocks yet</p>}</CollapsibleContent></Collapsible>)}
       </div></div>
     </Card></CollapsibleContent></Collapsible>
@@ -430,7 +451,7 @@ function Editor() {
 
     <ExportDialog open={exportOpen} onOpenChange={setExportOpen} diagram={document} path={path} notify={notify}/>
     <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
-    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize or drag it. Double-click a JavaScript block to use its controls; click outside it to finish. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. A collection of reusable block and canvas recipes. Connected constants, gains, sums and JS modules provide live value previews; feedback and time-domain simulation are left to consuming projects.</p><a className="license-link" href={`${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`} target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
+    <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Copy / paste blocks', '⌘ Ctrl + C / V'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize or drag it. Double-click a JavaScript block to use its controls; click outside it to finish. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. A collection of reusable block and canvas recipes. Connected constants, gains, sums and JS modules provide live value previews; feedback and time-domain simulation are left to consuming projects.</p><a className="license-link" href={`${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`} target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
     {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
   </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></ProjectContext.Provider></TooltipProvider>;
 }

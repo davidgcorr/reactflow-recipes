@@ -1,6 +1,6 @@
 import type { ModuleDependency } from '../code-config';
 import { parseCodeFields, validVariable } from '../code-config';
-export type ProjectModule = { id: string; alias: string; filename?: string; source?: string; url?: string; dependencies?: ModuleDependency[] };
+export type ProjectModule = { id: string; alias: string; builtin?: 'tensorflow'; referenceUrl?: string; filename?: string; source?: string; url?: string; dependencies?: ModuleDependency[] };
 export type Operation = { type: 'function' | 'construct' | 'method' | 'property' | 'export' | 'code'; moduleId?: string; exportName?: string; member?: string; uses?: string[]; effect: 'pure' | 'step' | 'event' };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 export function parseModules(value: unknown): ProjectModule[] {
@@ -10,6 +10,10 @@ export function parseModules(value: unknown): ProjectModule[] {
     if (!object(m) || typeof m.id !== 'string' || !m.id || m.id.length > 128 || ids.has(m.id) || typeof m.alias !== 'string' || !validVariable(m.alias) || aliases.has(m.alias)) throw new Error('Project modules need unique IDs and JavaScript aliases.');
     ids.add(m.id); aliases.add(m.alias);
     if (m.filename !== undefined && (typeof m.filename !== 'string' || !m.filename || m.filename.length > 255 || /[\\/]/.test(m.filename))) throw new Error('Invalid module filename.');
+    if (m.builtin !== undefined) {
+      if (m.builtin !== 'tensorflow' || m.source !== undefined || m.url !== undefined || m.dependencies !== undefined || m.referenceUrl !== 'https://www.tensorflow.org/js') throw new Error('Invalid bundled TensorFlow.js library.');
+      return { id: m.id, alias: m.alias, builtin: 'tensorflow' as const, referenceUrl: m.referenceUrl };
+    }
     const fields = parseCodeFields({ dependencies: [{ specifier: m.alias, ...(m.url !== undefined ? { url: m.url } : {}), ...(m.source !== undefined ? { source: m.source } : {}) }] }, []);
     const dependencies = m.dependencies === undefined ? undefined : parseCodeFields({ dependencies: m.dependencies }, []).dependencies;
     return { id: m.id, alias: m.alias, ...(m.filename !== undefined ? { filename: m.filename as string } : {}), ...(fields.dependencies![0].url !== undefined ? { url: fields.dependencies![0].url } : { source: fields.dependencies![0].source }), ...(dependencies ? { dependencies } : {}) };

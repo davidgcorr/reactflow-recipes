@@ -20,3 +20,11 @@ export function themeVariables(theme: ThemeSettings): Record<string, string> {
     '--grid-color': color(dark ? 0.33 : 0.85, 0.06),
   };
 }
+
+export function canvasBackground(theme: ThemeSettings): string {
+  const dark=theme.mode==='dark';
+  const base=dark?'#151519':'#fafafa';
+  const palettes={aurora:dark?['#31264a','#183e45']:['#e5dcfa','#d4f1ef'],ocean:dark?['#123b50','#192f48']:['#d6eff9','#dce4fa'],sunset:dark?['#4a2837','#42371f']:['#fbe0eb','#f9edce']};
+  const colors=theme.canvasBackground&&theme.canvasBackground!=='plain'?palettes[theme.canvasBackground]:undefined;
+  return colors?`radial-gradient(ellipse at 15% 15%, ${colors[0]}, transparent 65%), radial-gradient(ellipse at 85% 85%, ${colors[1]}, transparent 65%), ${base}`:'var(--background)';
+}

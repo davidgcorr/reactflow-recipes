@@ -33,7 +33,7 @@ Open `http://localhost:4173/reactflow-recipes/`.
 ## Workspace
 
 - The project title can be edited beside the milver wordmark at the top left.
-- The top-left button opens/closes the floating block library. The **Blocks** tab starts with Sources, followed by Operators & functions, JavaScript, Sinks, Structure and Python. Tiles preview input and output ports. **My Blocks** stores reusable JavaScript blocks and includes examples. The **Libraries** tab manages project-wide JavaScript packages without creating canvas blocks. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Drag the left edge of the right panel to resize it; the width is saved locally. Keyboard users can focus its separator and use the arrow keys.
+- The top-left button opens/closes the floating block library. The **Blocks** tab starts with Sources, followed by Operators & functions, JavaScript, Sinks and Structure. Tiles preview input and output ports. **My Blocks** separates Saved blocks, Block examples and Project examples. The **Libraries** tab manages project-wide JavaScript packages without creating canvas blocks. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Drag the left edge of the right panel to resize it; the width is saved locally. Keyboard users can focus its separator and use the arrow keys.
 - Canvas tools float at the bottom; the canvas hierarchy shows a home icon at the top and parent block names inside nested canvases. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
 - Drag a block from the library to place it. Clicking a library item adds a block near the viewport center. Double-click a JavaScript block to use its controls; click outside it to return to dragging.
 - Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Properties** (names, values, descriptions, ports), **Render** (appearance and the render function), **Code** (logic, port mappings and runtime feedback), and **JSON** (editable block data) tabs.
@@ -58,7 +58,7 @@ Inputs and outputs remain synchronized in both directions: editing a parent's po
 
 ## shadcn theme
 
-The first workspace uses a black-and-white Neutral palette. Open the palette icon to change Light/Dark mode, choose a preset, tune **OKLCH hue and chroma**, or change corner radius. Chroma 0 is monochrome. Theme settings are saved and included in diagram JSON. Blocks, ports, floating panels, dialogs, and controls share the same semantic CSS variables. Legacy per-block `data.color` remains in JSON for compatibility. `data.visuals` optionally overrides theme fill and ink and controls header, label, mask content, port labels, dimensions and radius. Use **Use theme colors** to clear fill and ink overrides.
+The first workspace uses a black-and-white Neutral palette. Open the palette icon to change Light/Dark mode, choose a preset, tune **OKLCH hue and chroma**, or change corner radius. Chroma 0 is monochrome. Canvas customization also includes a grid switch and Plain, Aurora, Ocean and Sunset backgrounds. `theme.showGrid` and `theme.canvasBackground` are saved in diagram JSON alongside the theme. Blocks, ports, floating panels, dialogs, and controls share the same semantic CSS variables. Legacy per-block `data.color` remains in JSON for compatibility. `data.visuals` optionally overrides theme fill and ink and controls header, label, mask content, port labels, dimensions and radius. Use **Use theme colors** to clear fill and ink overrides.
 
 The official shadcn CLI generated the components in `src/components/ui/`. Radix provides keyboard interactions, focus management, dialogs, collapsibles, selects, tooltips, and sliders. `components.json` configures future shadcn additions. `src/theme.ts` maps theme settings to semantic tokens.
 
@@ -142,7 +142,7 @@ This is a diagram editor, not a numerical simulation engine. Constants, gains, s
 
 Open **Libraries** in the left panel to add an ES module URL, upload `.js`/`.mjs` files, or create an embedded module. Expand an imported library to edit its alias, URL or source; use its trash button to remove it. These edits support undo/redo. Importing a library never creates a block or any connections.
 
-Libraries are exposed to every mounted JavaScript block, including its render function, as `modules.alias`. For example, a library saved as `helper` with `export const double = x => x * 2` is available as `modules.helper.double(x)`. Embedded libraries can import each other by project alias. The block’s code can also use `await import('math')`. Remote libraries must be browser-compatible ESM with CORS support. Uploaded source is embedded in JSON; remote URLs require network access.
+Libraries are exposed to every mounted JavaScript block, including its render function, as `modules.alias`. For example, a library saved as `helper` with `export const double = x => x * 2` is available as `modules.helper.double(x)`. Embedded libraries can import each other by project alias. The block’s code can also use dynamic imports for project aliases. Remote libraries must be browser-compatible ESM with CORS support. Uploaded source is embedded in JSON; remote URLs require network access.
 
 ## JavaScript logic and rendering
 
@@ -152,7 +152,7 @@ Libraries are exposed to every mounted JavaScript block, including its render fu
 
 ```js
 async function run() {
-  state.result = modules.math.multiply(inputs.input1 ?? Number(value), 2);
+  state.result = modules.tensorMath.multiply(inputs.input1 ?? Number(value), 2);
   emit(state.result, 'output1');
   await render();
 }
@@ -192,21 +192,29 @@ Return a cleanup function from Render to dispose graphics, observers or event li
 
 **Sources** includes Number, Boolean, String, Vector, Matrix, Tensor, Clock, Trigger, Slider, Selector and Button. Their logic and render bodies use the same API. `setValue(string)` saves a source parameter; source controls use it for slider positions, selector choices and button counts. Clock periods are milliseconds (minimum 16 ms). Trigger counts rising input edges.
 
-**My Blocks → Examples** contains Three.js and LaTeX examples with graphics in Render. Three.js registers its required package in Libraries; LaTeX uses the bundled renderer. The Three.js example needs WebGL. **WebAssembly** starts with a working two-input integer add binary. Import another `.wasm` file in Code and choose the exported function. The binary, wrapper logic and rendering all round-trip through JSON.
+**My Blocks → Block examples** contains Three.js and LaTeX examples with graphics in Render. Three.js registers its required package in Libraries; LaTeX uses the bundled renderer. The Three.js example needs WebGL. **WebAssembly** starts with a working two-input integer add binary. Import another `.wasm` file in Code and choose the exported function. The binary, wrapper logic and rendering all round-trip through JSON.
 
 JavaScript blocks run in opaque-origin iframes with `sandbox="allow-scripts"`. They cannot access the editor DOM or its local storage. Library namespaces are shared within a block’s logic and rendering, while each iframe has its own library instances. Custom JavaScript runs while its canvas is mounted; hiding mask content leaves the runtime mounted. Publication exports show static labels; JSON preserves executable code and configuration.
 
-**Value renderer** accepts scalars, vectors, matrices and tensors. Choose precision and slice in Properties. Python blocks save code for a consuming runtime and do not execute in this editor.
+**Math / value viewer** is the single numeric/value sink. It accepts scalars, vectors, nested matrices/tensors, older shaped tensors, and runtime preview metadata. It uses LaTeX for numeric data and text for other values. Choose precision, formula font size and tensor slice in Properties. Scope and Python are no longer offered in the palette; older saved projects remain readable.
 
 ## Reusable blocks, operators and sinks
 
 Use **Save to My Blocks** in a JavaScript block’s inspector to capture its name, dimensions, parameter, ports, saved state, logic, rendering and project libraries. Insert a saved block to create an independent instance with a fresh ID. Deleting a saved definition leaves placed instances intact. Definitions live in `diagram.myBlocks` and travel with JSON and project undo/redo. Aliases with conflicting library definitions are reported before insertion.
 
-**Operators & functions** includes matrix multiplication, addition/residuals, elementwise multiplication/scaling, dot/cross products, transpose, reshape, tensor contraction, softmax, GELU, layer normalization, linear projection and scaled dot-product attention. Adding an operator imports the editable `math` ES module if needed. Its code calls `modules.math`; unconnected ports use the example defaults in Parameter. Numeric kernels support rectangular arrays and `{shape, data}` tensors, trailing-dimension broadcasting, stable softmax and optional causal attention. These small CPU kernels are intended for inspectable forward models.
+**Operators & functions** includes matrix multiplication, addition/residuals, elementwise multiplication/scaling, dot/cross products, transpose, reshape, tensor contraction, softmax, GELU, layer normalization, linear projection and scaled dot-product attention. Adding a numeric source or operator registers the bundled TensorFlow.js runtime if needed. Its code calls `modules.tensorMath`, a stable facade around TensorFlow.js tensor operations; `modules.tf` exposes the low-level API. Custom project libraries keep their aliases. Unconnected ports use the example defaults in Parameter. The CPU backend is bundled for offline execution in sandboxed frames and workers. It uses float32 computation and disposes temporary tensors after each operation. The facade supports broadcasting, batched/vector matrix products, stable softmax, normalization and optional causal attention.
 
-Open **My Blocks → Open transformer forward model**, or import [`examples/transformer-forward.json`](examples/transformer-forward.json), for a complete small single-head forward pass: token embeddings → Q/K/V projections → attention → residual/normalization → feed-forward/GELU → residual/normalization → mathematical output. Weights and biases are visible in the projection parameters. `node scripts/create-transformer-example.mjs` regenerates it from the stock blocks.
+Open **My Blocks → Project examples → Transformer forward model**, or import [`examples/transformer-forward.json`](examples/transformer-forward.json), for a complete small single-head forward pass: token embeddings → Q/K/V projections → attention → residual/normalization → feed-forward/GELU → residual/normalization → mathematical output. Weights and biases are visible in the projection parameters. `node scripts/create-transformer-example.mjs` regenerates it from the stock blocks.
 
-**Sinks** includes a LaTeX math viewer, a table/value renderer, a line graph and a scatter plot. The line graph accepts a numeric vector or retains the last 128 scalar values. The scatter plot accepts `[[x,y], ...]` pairs and displays up to 256 points. Graph state and editable SVG/JSX rendering round-trip through JSON.
+**Sinks** includes one Math / value viewer, a line graph and a scatter plot. The line graph accepts a numeric vector or retains the last 128 scalar values. The scatter plot accepts `[[x,y], ...]` pairs and displays up to 256 points. Graph state and editable SVG/JSX rendering round-trip through JSON.
+
+Numeric sources use Python-style list notation: `[1,2,3]`, `[[1,2],[4,5]]`, or `[[[1,2]],[[3,4]]]`. A small parser accepts these lists (including trailing commas), checks rectangular shape and finite values, and converts them to temporary TensorFlow.js tensors. Ports and saved state carry plain nested arrays, so every source, operator and viewer uses the same transferable format. Earlier `{shape, data}` inputs are still understood. In a numeric block’s Render function, change `const fontSize = 24` to tune formula size.
+
+Canvas Ctrl/Cmd+C copies all selected blocks and their internal connections; Ctrl/Cmd+V pastes independent copies with new IDs, preserving nested parent interfaces and library definitions. Browser clipboard access has an in-app fallback. Text/code editors keep their usual clipboard behavior.
+
+The Libraries panel includes reference cards for React, shadcn/ui, KaTeX and TensorFlow.js. Project JSON records the numeric runtime as `{ "builtin": "tensorflow", "referenceUrl": "https://www.tensorflow.org/js" }`; it does not embed the large compiled dependency. Importing JSON restores the same bundled CPU implementation.
+
+TensorFlow.js was chosen for editable model construction and tensor operations ([tensor/operation guide](https://www.tensorflow.org/js/guide/tensors_operations)). ONNX Runtime Web is a strong alternative for executing existing ONNX models ([documentation](https://onnxruntime.ai/docs/get-started/with-javascript/web.html)); Transformers.js targets pretrained model pipelines. This editor needs individual operations that users can wire into a forward model.
 
 ## Existing project compatibility
 

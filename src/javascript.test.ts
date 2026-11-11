@@ -1,3 +1,5 @@
+import * as math from './math-library.js';
+await math.ready;
 import { buildBlockModule } from './block-code';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exampleDiagram, makeNode, parseDiagram, serializeDiagram, updateCanvas } from './model';
@@ -30,14 +32,14 @@ async function mountRecipe(name: string, inputs: Record<string, Signal> = {}) {
   const mapped = (input: Record<string, Signal>) => ({ ...input, ...Object.fromEntries(node.data.ports.filter(p => p.type === 'input' && p.variable).map(p => [p.variable!, input[p.id] ?? null])) });
   let mounted: any;
   const edits: Promise<unknown>[] = [];
-  mounted = await module.default({ element, ui, inputs: mapped(inputs), state: {}, modules: {}, value: node.data.value, emit: (v: Signal) => outputs.push(v), setValue: (v: string) => { persisted.push(v); edits.push(mounted.update(mapped(inputs), v)); }, wasm: node.data.wasm, ports: node.data.ports });
+  mounted = await module.default({ element, ui, inputs: mapped(inputs), state: {}, modules: {math,tensorMath:math}, value: node.data.value, emit: (v: Signal) => outputs.push(v), setValue: (v: string) => { persisted.push(v); edits.push(mounted.update(mapped(inputs), v)); }, wasm: node.data.wasm, ports: node.data.ports });
   const current = { update: (inputs: Record<string, Signal>, value = node.data.value) => mounted.update(mapped(inputs), value), destroy: () => mounted.destroy() };
   return { node, element, rendered, outputs, persisted, current, settle: () => Promise.all(edits) };
 }
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('JavaScript recipe execution', () => {
-  for (const [name, expected] of Object.entries({ Number: 1, Boolean: true, String: 'Hello', Vector: [1, 2, 3], Matrix: [[1, 2], [3, 4]], Tensor: { shape: [2, 2, 2], data: [1, 2, 3, 4, 5, 6, 7, 8] } })) {
+  for (const [name, expected] of Object.entries({ Number: 1, Boolean: true, String: 'Hello', Vector: [1, 2, 3], Matrix: [[1, 2], [3, 4]], Tensor: [[[1,2],[3,4]],[[5,6],[7,8]]] })) {
     it(`executes the ${name} source and updates it`, async () => {
       const { outputs, current, node } = await mountRecipe(name);
       expect(outputs.at(-1)).toEqual(expected);
@@ -49,7 +51,7 @@ describe('JavaScript recipe execution', () => {
     const { current } = await mountRecipe('Matrix');
     await expect(current.update({}, '[[1],[2,3]]')).rejects.toThrow('rectangular');
     const { current: tensor } = await mountRecipe('Tensor');
-    await expect(tensor.update({}, '{"shape":[2,3],"data":[1]}')).rejects.toThrow('matching');
+    await expect(tensor.update({}, '{"shape":[2,3],"data":[1]}')).rejects.toThrow('match');
   });
   it('emits clock ticks, changes its period and disposes the timer', async () => {
     vi.useFakeTimers(); const { current, outputs } = await mountRecipe('Clock');

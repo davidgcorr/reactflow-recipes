@@ -57,6 +57,7 @@ try {
  for(const d of config.dependencies??[]){if(d.url)imports[d.specifier]=d.url;else{const url=URL.createObjectURL(new Blob([d.source],{type:'text/javascript'}));urls.push(url);imports[d.specifier]=url;}}
  const map=document.createElement('script');map.type='importmap';map.textContent=JSON.stringify({imports});document.head.append(map);
  modules=Object.fromEntries(await Promise.all(Object.keys(imports).map(async name=>[name,await import(name)])));
+ for(const namespace of Object.values(modules)){if(namespace.tf){await namespace.ready;modules.tf??=namespace.tf;modules.tensorMath??=namespace;}}
  const url=URL.createObjectURL(new Blob([${encode(source)}],{type:'text/javascript'}));urls.push(url);const module=await import(url);mount=module.default;
  if(typeof mount!=='function')throw new Error('Export a default mount function.');send({type:'mask-ready'});flush();
 } catch(error){report(error);}
@@ -64,12 +65,16 @@ try {
 }
 let renderBundle: Promise<string> | undefined;
 export const loadRenderBundle = () => renderBundle ??= import('../generated/block-ui.js?raw').then(module => module.default).catch(error => { renderBundle = undefined; throw error; });
+let mathBundle: Promise<string> | undefined;
+export const loadMathBundle = () => mathBundle ??= import('../generated/block-math.js?raw').then(m => m.default).catch(error => { mathBundle = undefined; throw error; });
 export function ModuleMask({ id, source, render, state, value, color, background, ports, dependencies, wasm, interactive = false }: { id: string; source?: string; render?: string; state?: BlockData['state']; value: string; color: string; background: string; ports: Port[]; dependencies?: ModuleDependency[]; wasm?: WasmConfig; interactive?: boolean }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const { values, emit, setValue, saveState, setProperty, report } = useContext(PreviewContext);
   const project = useContext(ProjectContext);
-  const shared = project.modules.flatMap(m => [...(m.dependencies ?? []), { specifier: m.alias, ...(m.url ? { url: m.url } : { source: m.source }) }]);
-  const allDependencies = [...new Map([...(dependencies ?? []), ...shared].map(d => [d.specifier, d])).values()];
+  const builtins = project.modules.filter(m => m.builtin);
+  const [mathSource, setMathSource] = useState<string>();
+  const shared = project.modules.filter(m => !m.builtin).flatMap(m => [...(m.dependencies ?? []), { specifier: m.alias, ...(m.url ? { url: m.url } : { source: m.source }) }]);
+  const allDependencies = [...new Map([...(dependencies ?? []), ...shared, ...builtins.map(m => ({ specifier: m.alias, source: mathSource ?? '' }))].map(d => [d.specifier, d])).values()];
   const savedState = useRef<BlockData['state']>(undefined);
   const stateInput = state === savedState.current ? undefined : state;
   const initialState = useRef(state); initialState.current = state;
@@ -81,12 +86,14 @@ export function ModuleMask({ id, source, render, state, value, color, background
   }, [source, render]);
   const needsUI = /React\.createElement|\blatex\s*\(/.test(code);
   const [uiSource, setUISource] = useState<string>();
+  const needsMath = builtins.length > 0;
+  useEffect(() => { let active = true; if (needsMath) void loadMathBundle().then(source => { if (active) setMathSource(source); }).catch(error => { if (active) report(id, String(error)); }); return () => { active = false; }; }, [needsMath, id, report]);
   const [uiError, setUIError] = useState('');
   useEffect(() => { let active = true; if (needsUI) void loadRenderBundle().then(source => { if (active) { setUISource(source); setUIError(''); } }).catch(error => { if (active) { setUIError('Could not load renderer.'); report(id, String(error)); } }); return () => { active = false; }; }, [needsUI, id, report]);
   const document = useMemo(() => {
     const token = crypto.randomUUID();
-    return { token, source: needsUI && !uiSource ? `<!doctype html><html><body style="font:11px system-ui;color:#737373">${uiError || 'Loading renderer…'}</body></html>` : moduleDocument(code, { ...JSON.parse(settings), state: initialState.current, ...(needsUI ? { uiSource } : {}), token }) };
-  }, [code, settings, needsUI, uiSource, uiError]);
+    return { token, source: (needsUI && !uiSource || needsMath && !mathSource) ? `<!doctype html><html><body style="font:11px system-ui;color:#737373">${uiError || 'Loading renderer…'}</body></html>` : moduleDocument(code, { ...JSON.parse(settings), state: initialState.current, ...(needsUI ? { uiSource } : {}), token }) };
+  }, [code, settings, needsUI, uiSource, uiError, needsMath, mathSource]);
   const latest = useRef({ inputs, value, color, background, state }); latest.current = { inputs, value, color, background, state: stateInput };
   const token = useRef(document.token); token.current = document.token;
   useEffect(() => {

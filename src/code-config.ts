@@ -3,7 +3,7 @@ import { isSignal, type Signal } from './runtime';
 import type { Port } from './model';
 export type ModuleDependency = { specifier: string; url?: string; source?: string };
 export type WasmConfig = { filename: string; base64: string; exportName: string };
-export type RendererConfig = { precision: number; slice: number };
+export type RendererConfig = { precision: number; slice: number; fontSize?: number };
 export const validVariable = (name: string) => /^[A-Za-z_$][\w$]{0,63}$/.test(name) && !['__proto__', 'prototype', 'constructor'].includes(name);
 export const validSpecifier = (name: string) => /^[A-Za-z@][\w@/.-]{0,127}$/.test(name) && !['__proto__', 'constructor', 'prototype'].includes(name);
 export const validModuleUrl = (url: string) => { try { return ['https:', 'http:'].includes(new URL(url).protocol); } catch { return false; } };
@@ -43,7 +43,8 @@ export function parseCodeFields(data: Record<string, unknown>, ports: Port[]) {
   if (data.renderer !== undefined) {
     const r = data.renderer as RendererConfig;
     if (!r || !Number.isInteger(r.precision) || r.precision < 0 || r.precision > 12 || !Number.isInteger(r.slice) || r.slice < 0 || r.slice > 10000) throw new Error('Invalid renderer configuration.');
-    result.renderer = { precision: r.precision, slice: r.slice };
+    if (r.fontSize !== undefined && (!Number.isFinite(r.fontSize) || r.fontSize < 10 || r.fontSize > 72)) throw new Error('Invalid renderer font size.');
+    result.renderer = { precision: r.precision, slice: r.slice, ...(r.fontSize !== undefined ? { fontSize: r.fontSize } : {}) };
   }
   return result;
 }

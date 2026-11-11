@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import mathSource from './math-library.js?raw';
+import * as math from './math-library.js';
+await math.ready;
 import { buildBlockModule } from './block-code';
 import { jsRecipes, makeJsNode } from './js-recipes';
 import { exampleDiagram, parseDiagram, serializeDiagram } from './model';
 import { mathLibrary } from './default-libraries';
 import katex from 'katex';
-const math = await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(mathSource).toString('base64')}`);
+
 
 describe('numeric kernels for a transformer forward pass', () => {
   it('multiplies matrices and contracts shaped tensors', () => {
@@ -37,7 +38,7 @@ describe('numeric kernels for a transformer forward pass', () => {
       const code = buildBlockModule(node.data.module!, node.data.render!);
       const module = await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
       const outputs: unknown[] = [], equations: string[] = [];
-      const mounted = await module.default({ inputs:{}, state:{}, value:recipe.value, element:{}, modules:{math}, emit:(value:unknown)=>outputs.push(value), ui:{ latex:(_element: unknown,tex: string)=>{equations.push(katex.renderToString(tex,{throwOnError:true,output:'mathml'}));} } });
+      const mounted = await module.default({ inputs:{}, state:{}, value:recipe.value, element:{}, modules:{math,tensorMath:math}, emit:(value:unknown)=>outputs.push(value), ui:{ latex:(_element: unknown,tex: string)=>{equations.push(katex.renderToString(tex,{throwOnError:true,output:'mathml'}));} } });
       expect(outputs.length, name).toBe(1);
       expect(equations[0], name).toContain('<math');
       await mounted.destroy();
@@ -72,9 +73,10 @@ it('executes the complete transformer example using its wired numeric outputs', 
       inputs[port.id]=edge?outputs[edge.source]:null;
       if(port.variable)inputs[port.variable]=inputs[port.id];
     }
+    if (node.data.kind === 'renderer') { expect(math.shape(inputs['in-0'])).toEqual([2,2]); continue; }
     const module=await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(buildBlockModule(node.data.module!,node.data.render!)).toString('base64')}`);
     const state:Record<string,unknown>={};
-    const mounted=await module.default({inputs,state,element:{},value:node.data.value,modules:{math},emit:(value:unknown)=>{outputs[node.id]=value;},ui:{latex:()=>{}}});
+    const mounted=await module.default({inputs,state,element:{},value:node.data.value,modules:{math,tensorMath:math},emit:(value:unknown)=>{outputs[node.id]=value;},ui:{latex:()=>{}}});
     if(node.id==='output') {
       expect(math.shape(state.result)).toEqual([2,2]);
       expect((state.result as number[][]).flat().every(Number.isFinite)).toBe(true);
@@ -82,4 +84,24 @@ it('executes the complete transformer example using its wired numeric outputs', 
     }
     await mounted.destroy();
   }
+});
+
+it('interprets Python-style lists and disposes every temporary TensorFlow tensor',()=>{
+  expect(math.parse('[[1,2,],[3,4],]')).toEqual([[1,2],[3,4]]);
+  expect(math.shape(math.parse('[[[1,2]],[[3,4]]]'))).toEqual([2,1,2]);
+  const before=math.tf.memory().numTensors;
+  for(let i=0;i<20;i++)math.attention([[1,0]],[[1,0]],[[2,3]]);
+  expect(math.tf.memory().numTensors).toBe(before);
+});
+it('promotes vectors during matrix multiplication and supports batched matrices',()=>{
+  expect(math.matmul([[1,2],[3,4]],[5,6])).toEqual([17,39]);
+  expect(math.matmul([1,2],[[3],[4]])).toEqual([11]);
+  expect(math.matmul([1,2],[3,4])).toBe(11);
+  expect(math.matmul([[[1,0],[0,1]]],[[[2],[3]]])).toEqual([[[2],[3]]]);
+});
+it('keeps a custom math alias while adding the stable TensorFlow facade',async()=>{
+  const {withMath}=await import('./default-libraries');
+  const custom={id:'custom',alias:'math',source:'export const answer=42;'};
+  const modules=withMath([custom]);
+  expect(modules[0]).toEqual(custom);expect(modules[1].builtin).toBe('tensorflow');expect(modules[1].alias).toBe('tensorMath');
 });

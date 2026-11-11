@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import * as math from './math-library.js';
+await math.ready;
 import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as ui from './sandbox-ui';
@@ -14,7 +16,7 @@ async function mount(name: string) {
   const node=makeJsNode(name,{x:0,y:0}),element=document.createElement('div');document.body.append(element);
   const module=await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(buildBlockModule(node.data.module!,node.data.render!)).toString('base64')}`);
   const outputs: unknown[]=[],updates: Promise<unknown>[]=[];let current:any;
-  await act(async()=> { current=await module.default({element,state:{},inputs:{},modules:{},value:node.data.value,ports:node.data.ports,ui,emit:(value:unknown)=>outputs.push(value),setValue:(value:string)=>updates.push(current.update({},value))}); });
+  await act(async()=> { current=await module.default({element,state:{},inputs:{},modules:{math,tensorMath:math},value:node.data.value,ports:node.data.ports,ui,emit:(value:unknown)=>outputs.push(value),setValue:(value:string)=>updates.push(current.update({},value))}); });
   return {element,outputs,settle:()=>Promise.all(updates),dispose:()=>act(async()=>current.destroy())};
 }
 describe('React / shadcn source rendering in a real DOM',()=>{
@@ -52,4 +54,20 @@ describe('React / shadcn source rendering in a real DOM',()=>{
       await run.dispose();
     }
   });
+});
+
+import { createElement } from 'react';
+import { createRoot } from 'react-dom/client';
+import { ValueRenderer } from './components/value-renderer';
+import { PreviewContext } from './components/module-mask';
+it('uses the single math/value viewer for nested outputs and earlier runtime previews',async()=>{
+  const element=document.createElement('div');document.body.append(element);const root=createRoot(element);
+  for(const value of [math.matmul([[1,2],[3,4]],[[5],[6]]),{$ref:'matrix',type:'Matrix',shape:[2,1],rows:[[17],[39]],slices:1,slice:0}]){
+    await act(async()=>root.render(createElement(PreviewContext.Provider,{value:{values:{viewer:{inputs:{'in-0':value as any},outputs:{}}},emit(){},setValue(){},saveState(){},setProperty(){},report(){}}},createElement(ValueRenderer,{id:'viewer',settings:{precision:4,slice:0,fontSize:32}}))));
+    expect(element.querySelector('.value-formula math')).not.toBeNull();
+    expect(element.textContent).toContain('17');expect(element.textContent).toContain('39');
+    expect((element.querySelector('.value-formula') as HTMLElement).style.fontSize).toBe('32px');
+    expect(element.querySelector('.value-table-scroll')).toBeNull();
+  }
+  await act(async()=>root.unmount());
 });

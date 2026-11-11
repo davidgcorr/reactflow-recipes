@@ -3,11 +3,11 @@ import { writeFile } from 'node:fs/promises';
 const server = await createServer({ server: { middlewareMode: true, hmr: false, ws: false }, appType: 'custom' });
 try {
   const { makeJsNode } = await server.ssrLoadModule('/src/js-recipes.ts');
-  const { serializeDiagram, parseDiagram } = await server.ssrLoadModule('/src/model.ts');
+  const { serializeDiagram, parseDiagram, makeNode } = await server.ssrLoadModule('/src/model.ts');
   const { mathLibrary } = await server.ssrLoadModule('/src/default-libraries.ts');
   const nodes = [], edges = [];
   const block = (id, recipe, x, y, config) => {
-    const node = makeJsNode(recipe, {x,y}, id);
+    const node = recipe === 'MathView' ? makeNode('renderer', {x,y}, id) : makeJsNode(recipe, {x,y}, id);
     node.width = recipe === 'MathView' ? 300 : 260; node.height = 200;
     if(config) node.data.value = JSON.stringify(config);
     nodes.push(node); return node;

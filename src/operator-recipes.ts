@@ -1,10 +1,12 @@
 export const numericRender = `// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.
 // Tune precision here; limit rows/columns to keep large tensors readable.
 const precision = 4;
+const fontSize = 24; // Font size in pixels; increase for a larger formula.
 const format = x => Number(x.toPrecision(precision)).toString();
 const matrix = rows => String.raw\`\\begin{bmatrix}\${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw\` \\\\ \`)}\\end{bmatrix}\`;
 let result = state.result;
 let prefix = '';
+if (result?.$ref && Array.isArray(result.rows)) result = result.rows;
 if (result && Array.isArray(result.shape)) {
   // Show the first 2D slice; change this slice offset for another tensor page.
   const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;
@@ -14,7 +16,7 @@ if (result && Array.isArray(result.shape)) {
 while (Array.isArray(result?.[0]?.[0])) result = result[0];
 const tex = typeof result === 'number' ? format(result)
   : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw\`\\text{Connect a numeric input}\`;
-return latex(element, prefix + tex);`;
+return latex(element, prefix + tex, { fontSize });`;
 
 const definitions = [
   ['MatMul', 'Matrix multiply', 'AB', 'matmul', 2, { a: [[1,2],[3,4]], b: [[1],[2]] }],
@@ -36,8 +38,8 @@ export const operatorRecipes = Object.fromEntries(definitions.map(([id, label, s
   if (fn === 'layerNorm') args.push('config.epsilon ?? 1e-5');
   if (fn === 'reshape') args.push('config.shape');
   if (fn === 'attention') args.push('config.causal ?? false');
-  const calculation = fn === 'linear' ? `modules.math.add(modules.math.matmul(${args[0]}, ${args[1]}), ${args[2]})` : `modules.math.${fn}(${args.join(', ')})`;
-  return [id, { label, symbol, category: 'Operators', inputs: count, outputs: 1, value: JSON.stringify(defaults), source: `// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = ${calculation};\nemit(state.result);\nawait render();`, render: numericRender }];
+  const calculation = fn === 'linear' ? `modules.tensorMath.add(modules.tensorMath.matmul(${args[0]}, ${args[1]}), ${args[2]})` : `modules.tensorMath.${fn}(${args.join(', ')})`;
+  return [id, { label, symbol, category: 'Operators', inputs: count, outputs: 1, value: JSON.stringify(defaults), source: `await modules.tensorMath.ready;\n// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\nstate.result = ${calculation};\nemit(state.result);\nawait render();`, render: numericRender }];
 }));
 export const sinkRecipes = {
   MathView: { label: 'Math viewer', symbol: '▦', category: 'Sinks', inputs: 1, outputs: 0, value: '', source: `state.result = inputs.input1;\nawait render();`, render: numericRender },

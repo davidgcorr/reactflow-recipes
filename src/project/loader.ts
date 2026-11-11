@@ -15,8 +15,8 @@ export class ModuleLoader {
       }
     }
   }
-  private dependency(name: string, base?: string): ModuleDependency | undefined {
-    const module = this.definitions.find(m => m.alias === name || !base && m.filename && (name === `./${m.filename}` || name === m.filename)); if (module) return { specifier: module.alias, source: module.source, url: module.url };
+  private dependency(name: string, base?: string): (ModuleDependency & { builtin?: 'tensorflow' }) | undefined {
+    const module = this.definitions.find(m => m.alias === name || !base && m.filename && (name === `./${m.filename}` || name === m.filename)); if (module) return { specifier: module.alias, source: module.source, url: module.url, builtin: module.builtin };
     const matches = this.definitions.flatMap(m => m.dependencies ?? []).filter(d => d.specifier === name);
     if (matches.some(d => JSON.stringify(d) !== JSON.stringify(matches[0]))) throw new Error(`Conflicting project dependency: ${name}`);
     return matches[0];
@@ -28,6 +28,7 @@ export class ModuleLoader {
     const cached = this.resolved.get(key); if (cached) return cached;
     const task = (async () => {
       let source = this.sources.get(key), sourceUrl = dep?.url;
+      if (dep?.builtin === 'tensorflow') source = (await import('../generated/block-math.js?raw')).default;
       if (source === undefined) {
         sourceUrl ??= key;
         if (!/^https?:\/\//.test(sourceUrl)) throw new Error(`Unknown module '${name}'. Import it into the project or use an absolute ES module URL.`);
@@ -56,6 +57,7 @@ export class ModuleLoader {
   async load() {
     const modules: Record<string, Namespace> = Object.create(null);
     for (const definition of this.definitions) modules[definition.alias] = await this.importURL(await this.resolve(definition.alias));
+    if (this.definitions.some(m => m.builtin === 'tensorflow')) { const builtin = this.definitions.find(m => m.builtin === 'tensorflow')!; await modules[builtin.alias].ready; modules.tf ??= modules[builtin.alias].tf as Namespace; modules.tensorMath ??= modules[builtin.alias]; }
     return modules;
   }
   private async importURL(url: string): Promise<Namespace> { return this.transport?.importURL ? this.transport.importURL(url) : import(/* @vite-ignore */ url); }

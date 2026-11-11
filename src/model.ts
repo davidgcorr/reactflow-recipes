@@ -7,7 +7,7 @@ import type { Edge, Node, Viewport } from '@xyflow/react';
 
 export type Side = 'left' | 'right' | 'top' | 'bottom';
 export type Port = { id: string; name: string; type: 'input' | 'output'; side: Side; offset?: number; variable?: string };
-export type ThemeSettings = { mode: 'light' | 'dark'; hue: number; chroma: number; radius: number };
+export type ThemeSettings = { showGrid?: boolean; canvasBackground?: 'plain' | 'aurora' | 'ocean' | 'sunset'; mode: 'light' | 'dark'; hue: number; chroma: number; radius: number };
 export type BlockVisuals = { background?: string; foreground?: string; showHeader?: boolean; showLabel?: boolean; showValue?: boolean; showPortLabels?: boolean; radius?: number };
 export type FlowSettings = { route?: 'smoothstep' | 'bezier'; points?: { x: number; y: number }[]; animation?: 'none' | 'dash' | 'pulse'; speed?: number; reverse?: boolean; color?: string; width?: number };
 export type Canvas = { nodes: BlockNode[]; edges: Edge[]; viewport: Viewport };
@@ -31,7 +31,7 @@ export type BlockData = {
 export type BlockNode = Node<BlockData, 'block'>;
 export type SavedBlock = { id: string; name: string; width: number; height: number; data: BlockData; modules?: ProjectModule[] };
 export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings; modules?: ProjectModule[]; myBlocks?: SavedBlock[] };
-export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10 };
+export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10, showGrid: true, canvasBackground: 'plain' };
 export const defaultViewport: Viewport = { x: 80, y: 160, zoom: 1 };
 export const colors = ['#171717', '#404040', '#525252', '#737373', '#a3a3a3', '#d4d4d4'];
 export const templates = [
@@ -42,7 +42,7 @@ export const templates = [
   { kind: 'scope', label: 'Scope', description: 'A signal output endpoint', symbol: '⌁', value: '', inputs: 1, outputs: 0 },
   { kind: 'custom', label: 'Custom block', description: 'Define your own block', symbol: 'ƒ', value: 'f(x)', inputs: 1, outputs: 1 },
   { kind: 'javascript', label: 'JS module', description: 'A programmable, input-driven mask', symbol: 'JS', value: '1', inputs: 1, outputs: 1 },
-  { kind: 'renderer', label: 'Value renderer', description: 'Inspect numbers, vectors, matrices and tensors', symbol: '[ ]', value: '', inputs: 1, outputs: 0 },
+  { kind: 'renderer', label: 'Math / value viewer', description: 'Inspect numbers, vectors, matrices and tensors', symbol: '[ ]', value: '', inputs: 1, outputs: 0 },
   { kind: 'module', label: 'Import module', description: 'Import functions, classes and constants for the project', symbol: '↓JS', value: '', inputs: 0, outputs: 0 },
   { kind: 'compute', label: 'JS computation', description: 'Run code in the shared project runtime', symbol: 'ƒ()', value: 'null', inputs: 1, outputs: 1 },
   { kind: 'python', label: 'Python code', description: 'Editable Python source for your own runtime', symbol: 'Py', value: '', inputs: 1, outputs: 1 },
@@ -93,7 +93,7 @@ export function makeNode(kind: string, position: { x: number; y: number }, id: s
   return node;
 }
 export function exampleDiagram(): Diagram {
-  const nodes = [makeNode('constant', { x: 60, y: 180 }, 'source'), makeNode('gain', { x: 330, y: 180 }, 'gain'), makeNode('sum', { x: 600, y: 180 }, 'sum'), makeNode('scope', { x: 870, y: 180 }, 'scope'), makeNode('constant', { x: 330, y: 410 }, 'offset')];
+  const nodes = [makeNode('constant', { x: 60, y: 180 }, 'source'), makeNode('gain', { x: 330, y: 180 }, 'gain'), makeNode('sum', { x: 600, y: 180 }, 'sum'), makeNode('renderer', { x: 870, y: 180 }, 'scope'), makeNode('constant', { x: 330, y: 410 }, 'offset')];
   nodes[0].data.label = 'Input signal'; nodes[1].data.label = 'Amplifier'; nodes[2].data.label = 'Add offset'; nodes[3].data.label = 'Output'; nodes[4].data.label = 'Offset'; nodes[4].data.value = '0.5';
   const edge = (id: string, source: string, target: string, targetHandle = 'in-0'): Edge => ({ id, source, target, sourceHandle: 'out-0', targetHandle, type: 'smoothstep' });
   return { version: 1, name: 'Signal processing', modules: [mathLibrary], nodes, edges: [edge('e1', 'source', 'gain'), edge('e2', 'gain', 'sum'), edge('e3', 'sum', 'scope'), edge('e4', 'offset', 'sum', 'in-1')], viewport: { x: 20, y: 80, zoom: 0.85 } };
@@ -192,7 +192,8 @@ export function parseDiagram(json: string): Diagram {
   if (d.theme !== undefined) {
     const t = d.theme;
     if (!record(t) || (t.mode !== 'light' && t.mode !== 'dark') || !finite(t.hue) || t.hue < 0 || t.hue > 360 || !finite(t.chroma) || t.chroma < 0 || t.chroma > 0.22 || !finite(t.radius) || t.radius < 0 || t.radius > 20) throw new Error('Invalid theme: expected mode, hue 0–360, chroma 0–0.22, radius 0–20.');
-    theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius };
+    if (t.showGrid !== undefined && typeof t.showGrid !== 'boolean' || t.canvasBackground !== undefined && !['plain', 'aurora', 'ocean', 'sunset'].includes(String(t.canvasBackground))) throw new Error('Invalid canvas appearance.');
+    theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius, ...(t.showGrid !== undefined ? { showGrid: t.showGrid as boolean } : {}), ...(t.canvasBackground !== undefined ? { canvasBackground: t.canvasBackground as ThemeSettings['canvasBackground'] } : {}) };
   }
   let myBlocks: SavedBlock[] | undefined;
   if (d.myBlocks !== undefined) {
