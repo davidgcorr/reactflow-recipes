@@ -1,3 +1,4 @@
+import { viewerLogic } from '@/viewer-code';
 import { completeFunction, insertFunctionSnippet, buildBlockModule } from '@/block-code';
 import { CodeEditor } from './code-editor';
 import { BlockHelp } from './block-help';
@@ -12,8 +13,8 @@ import { parseCodeFields, validVariable } from '@/code-config';
 export function CodeProperties({ node, update }: { node: BlockNode; update: (patch: Partial<BlockData>) => void }) {
   const computation = !!node.data.operation;
   const python = node.data.kind === 'python';
-  const raw = node.data.module ?? (python ? '' : defaultModule);
-  const source = node.data.render !== undefined ? completeFunction(raw, 'run') : raw;
+  const raw = node.data.module ?? (node.data.kind === 'renderer' ? viewerLogic : python ? '' : defaultModule);
+  const source = (node.data.render !== undefined || node.data.kind === 'renderer') ? completeFunction(raw, 'run') : raw;
   const [draft, setDraft] = useState(source);
   const [mappings, setMappings] = useState<Record<string, string>>(() => Object.fromEntries(node.data.ports.map(p => [p.id, p.variable ?? ''])));
   const [error, setError] = useState('');

@@ -1,3 +1,4 @@
+import { stringifySignal } from '../signal-json';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Diagram } from '../model';
 import { compileProject, definitionKey, executionKey, type ProjectPlan } from './graph';
@@ -8,7 +9,7 @@ export function useProjectRuntime(document: Diagram, external: Record<string, Ex
   let plan: ProjectPlan = { modules: [], nodes: [] }, compileError = '';
   try { plan = compileProject(document); } catch (e) { compileError = e instanceof Error ? e.message : String(e); }
   const enabled = !!document.modules?.length || plan.nodes.some(n => !!n.data.operation);
-  const definition = definitionKey(plan), execution = executionKey(plan), externals = JSON.stringify(external);
+  const definition = definitionKey(plan), execution = executionKey(plan), externals = stringifySignal(external);
   const frame = useRef<HTMLIFrameElement | null>(null), ready = useRef(false), requestId = useRef(0), pending = useRef<'live' | 'step' | null>(null), inFlight = useRef(false), latest = useRef({ plan, external, live });
   latest.current = { plan, external, live };
   const publish = useCallback((mode: 'live' | 'step') => {

@@ -64,8 +64,9 @@ describe('My Blocks project persistence', () => {
 });
 
 import forwardExample from '../examples/transformer-forward.json?raw';
-it('executes the complete transformer example using its wired numeric outputs', async () => {
-  const diagram=parseDiagram(forwardExample),outputs:Record<string,unknown>={};
+import attentionExample from '../examples/attention-step-by-step.json?raw';
+it.each([['transformer',forwardExample],['attention',attentionExample]])('executes the %s example using its wired numeric outputs', async (_name,source) => {
+  const diagram=parseDiagram(source),outputs:Record<string,unknown>={};
   for(const node of diagram.nodes) {
     const inputs:Record<string,unknown>={};
     for(const port of node.data.ports.filter(p=>p.type==='input')) {
@@ -73,17 +74,24 @@ it('executes the complete transformer example using its wired numeric outputs', 
       inputs[port.id]=edge?outputs[edge.source]:null;
       if(port.variable)inputs[port.variable]=inputs[port.id];
     }
-    if (node.data.kind === 'renderer') { expect(math.shape(inputs['in-0'])).toEqual([2,2]); continue; }
+    if (node.data.kind === 'renderer') {
+      expect(math.shape(inputs['in-0'])).toEqual([2,2]);
+      expect((inputs['in-0'] as number[][]).flat().every(Number.isFinite)).toBe(true);
+      continue;
+    }
     const module=await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(buildBlockModule(node.data.module!,node.data.render!)).toString('base64')}`);
     const state:Record<string,unknown>={};
     const mounted=await module.default({inputs,state,element:{},value:node.data.value,modules:{math,tensorMath:math},emit:(value:unknown)=>{outputs[node.id]=value;},ui:{latex:()=>{}}});
-    if(node.id==='output') {
+    if(node.id==='norm2') {
       expect(math.shape(state.result)).toEqual([2,2]);
       expect((state.result as number[][]).flat().every(Number.isFinite)).toBe(true);
       expect((state.result as number[][])[0].reduce((a,b)=>a+b,0)).toBeCloseTo(0);
     }
     await mounted.destroy();
   }
+  const expected=math.matmul(math.attention(outputs.query,outputs.key,outputs.value),outputs.w0);
+  for(let row=0;row<2;row++)for(let col=0;col<2;col++)expect((outputs.projection as number[][])[row][col]).toBeCloseTo(expected[row][col],5);
+  for(const row of outputs.probabilities as number[][])expect(row.reduce((a,b)=>a+b,0)).toBeCloseTo(1);
 });
 
 it('interprets Python-style lists and disposes every temporary TensorFlow tensor',()=>{

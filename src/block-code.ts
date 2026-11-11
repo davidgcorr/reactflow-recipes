@@ -31,8 +31,8 @@ export function buildBlockModule(logic: string, renderSource: string): string {
   const drawSource = completeFunction(renderSource, 'render');
   const source = `export default async function mount(api) {
   let { inputs, variables, value } = api;
-  const { element, state, modules, emit, emitEvent, setValue, setProperty, wasm, ports } = api;
-  const { React, Button, Slider, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, latex } = api.ui ?? {};
+  const { element, state, modules, emit, emitEvent, setValue, setProperty, wasm, ports, renderer } = api;
+  const { React, Button, Slider, Select, SelectTrigger, SelectValue, SelectContent, SelectItem, latex, describeValue, formatValue } = api.ui ?? {};
   let reactRoot;
   let cleanup;
   let disposers = [];

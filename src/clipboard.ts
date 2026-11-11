@@ -1,3 +1,4 @@
+import { stringifySignal, parseSignal } from './signal-json';
 import { interfacePorts, makeNode, parseDiagram, serializeDiagram, type Canvas, type Diagram } from './model';
 import { parseModules, type ProjectModule } from './project/schema';
 export type BlockClipboard = { type: 'milver.blocks'; version: 1; canvas: Canvas; modules: ProjectModule[] };
@@ -6,14 +7,14 @@ export function copySelection(canvas: Canvas, modules: ProjectModule[] = []): Bl
   const ids=new Set(nodes.map(n=>n.id));
   const selected={...canvas,nodes,edges:canvas.edges.filter(e=>ids.has(e.source)&&ids.has(e.target))};
   // Strip transient React Flow state while retaining nested canvases and wiring.
-  const clean=JSON.parse(serializeDiagram({version:1,name:'Copied blocks',...selected}));
+  const clean=parseSignal(serializeDiagram({version:1,name:'Copied blocks',...selected}));
   return {type:'milver.blocks',version:1,canvas:{nodes:clean.nodes,edges:clean.edges,viewport:clean.viewport},modules:structuredClone(modules)};
 }
 export function parseClipboard(text: string): BlockClipboard {
   if(text.length>10_000_000)throw new Error('Copied selection is too large.');
-  const value=JSON.parse(text);if(value?.type!=='milver.blocks'||value.version!==1||!value.canvas)throw new Error('The clipboard does not contain milver blocks.');
+  const value=parseSignal(text);if(value?.type!=='milver.blocks'||value.version!==1||!value.canvas)throw new Error('The clipboard does not contain milver blocks.');
   const parent=makeNode('subsystem',{x:0,y:0},'clipboard-parent');parent.data.canvas=value.canvas;parent.data.ports=interfacePorts(value.canvas);
-  const parsed=parseDiagram(JSON.stringify({version:1,name:'Clipboard',nodes:[parent],edges:[],viewport:{x:0,y:0,zoom:1}}));
+  const parsed=parseDiagram(stringifySignal({version:1,name:'Clipboard',nodes:[parent],edges:[],viewport:{x:0,y:0,zoom:1}}));
   return {type:'milver.blocks',version:1,canvas:parsed.nodes[0].data.canvas!,modules:parseModules(value.modules??[])};
 }
 export function pasteSelection(canvas: Canvas, payload: BlockClipboard, offset = 40): Canvas {
@@ -32,6 +33,6 @@ export function pasteSelection(canvas: Canvas, payload: BlockClipboard, offset =
 }
 export function mergeClipboardLibraries(current: ProjectModule[], copied: ProjectModule[]): ProjectModule[] {
   const result=[...current];
-  for(const module of copied){const existing=result.find(m=>m.alias===module.alias);if(existing){if(JSON.stringify({...existing,id:''})!==JSON.stringify({...module,id:''}))throw new Error(`Library ${module.alias} differs from the copied project.`);}else result.push({...module,id:result.some(m=>m.id===module.id)?crypto.randomUUID():module.id});}
+  for(const module of copied){const existing=result.find(m=>m.alias===module.alias);if(existing){if(stringifySignal({...existing,id:''})!==stringifySignal({...module,id:''}))throw new Error(`Library ${module.alias} differs from the copied project.`);}else result.push({...module,id:result.some(m=>m.id===module.id)?crypto.randomUUID():module.id});}
   return parseModules(result);
 }

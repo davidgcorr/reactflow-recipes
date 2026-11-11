@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "name": "Transformer forward · single attention head",
+  "name": "Transformer forward · explicit single head",
   "modules": [
     {
       "id": "builtin-math",
@@ -10,9 +10,9 @@
     }
   ],
   "viewport": {
-    "x": 30,
-    "y": 120,
-    "zoom": 0.35
+    "x": 40,
+    "y": 80,
+    "zoom": 0.2
   },
   "nodes": [
     {
@@ -22,10 +22,10 @@
         "x": 0,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Token embeddings · 2 × 2",
+        "label": "X · token embeddings · 2 × 2",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -41,7 +41,37 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
         "recipe": "Matrix",
-        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w-query",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 900
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Wq · 2 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,0.5],[0,1]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -49,17 +79,17 @@
       "id": "query",
       "type": "block",
       "position": {
-        "x": 360,
+        "x": 340,
         "y": 0
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Query projection",
+        "label": "Query · X Wq",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
         "ports": [
           {
             "id": "in-0",
@@ -76,12 +106,35 @@
             "variable": "input2"
           },
           {
-            "id": "in-2",
-            "name": "in 3",
-            "type": "input",
-            "side": "left",
-            "variable": "input3"
-          },
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w-key",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 1200
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Wk · 2 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,0],[0.5,1]]",
+        "ports": [
           {
             "id": "out-0",
             "name": "out",
@@ -90,9 +143,9 @@
             "variable": "output1"
           }
         ],
-        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\n  emit(state.result);\n  await render();\n}",
-        "recipe": "Linear",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -100,17 +153,17 @@
       "id": "key",
       "type": "block",
       "position": {
-        "x": 360,
+        "x": 340,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Key projection",
+        "label": "Key · X Wk",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
         "ports": [
           {
             "id": "in-0",
@@ -127,12 +180,35 @@
             "variable": "input2"
           },
           {
-            "id": "in-2",
-            "name": "in 3",
-            "type": "input",
-            "side": "left",
-            "variable": "input3"
-          },
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w-value",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 1500
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Wv · 2 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,2],[3,1]]",
+        "ports": [
           {
             "id": "out-0",
             "name": "out",
@@ -141,9 +217,9 @@
             "variable": "output1"
           }
         ],
-        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\n  emit(state.result);\n  await render();\n}",
-        "recipe": "Linear",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -151,17 +227,17 @@
       "id": "value",
       "type": "block",
       "position": {
-        "x": 360,
+        "x": 340,
         "y": 600
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Value projection",
+        "label": "Value · X Wv",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
         "ports": [
           {
             "id": "in-0",
@@ -178,11 +254,41 @@
             "variable": "input2"
           },
           {
-            "id": "in-2",
-            "name": "in 3",
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "key-transpose",
+      "type": "block",
+      "position": {
+        "x": 680,
+        "y": 300
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Kᵀ · transpose keys",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2],[3,4]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
             "type": "input",
             "side": "left",
-            "variable": "input3"
+            "variable": "input1"
           },
           {
             "id": "out-0",
@@ -192,9 +298,127 @@
             "variable": "output1"
           }
         ],
-        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\n  emit(state.result);\n  await render();\n}",
-        "recipe": "Linear",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.transpose(inputs.input1 ?? config.a);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "Transpose",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "scores",
+      "type": "block",
+      "position": {
+        "x": 1020,
+        "y": 0
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Q Kᵀ · attention scores",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "scaled-scores",
+      "type": "block",
+      "position": {
+        "x": 1360,
+        "y": 0
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Scale · 1 / √dₖ",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "0.7071067811865475",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const gain = modules.tensorMath.parse(value);\n  if (typeof gain !== 'number') throw new Error('Enter a numeric gain.');\n  state.result = modules.tensorMath.multiply(inputs.input1 ?? 0, gain);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "Gain",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "probabilities",
+      "type": "block",
+      "position": {
+        "x": 1700,
+        "y": 0
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Softmax · each row sums to 1",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2,3]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.softmax(inputs.input1 ?? config.a);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "Softmax",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -202,17 +426,17 @@
       "id": "attention",
       "type": "block",
       "position": {
-        "x": 720,
+        "x": 2040,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Scaled attention",
+        "label": "Attention · softmax(scores) V",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[[1,2],[3,4]],\"causal\":false}",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
         "ports": [
           {
             "id": "in-0",
@@ -229,11 +453,78 @@
             "variable": "input2"
           },
           {
-            "id": "in-2",
-            "name": "in 3",
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w0",
+      "type": "block",
+      "position": {
+        "x": 2040,
+        "y": 600
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "W₀ · output weights · 2 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,0.25],[0.5,1]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "projection",
+      "type": "block",
+      "position": {
+        "x": 2380,
+        "y": 300
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "Output projection · attention W₀",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2],[3,4]],\"b\":[[1],[2]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
             "type": "input",
             "side": "left",
-            "variable": "input3"
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
           },
           {
             "id": "out-0",
@@ -243,9 +534,9 @@
             "variable": "output1"
           }
         ],
-        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.attention(inputs.input1 ?? config.a, inputs.input2 ?? config.b, inputs.input3 ?? config.c, config.causal ?? false);\n  emit(state.result);\n  await render();\n}",
-        "recipe": "Attention",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
+        "recipe": "MatMul",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -253,13 +544,13 @@
       "id": "residual1",
       "type": "block",
       "position": {
-        "x": 1080,
+        "x": 2720,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Add / residual",
+        "label": "Residual · X + attention W₀",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -289,7 +580,7 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
         "recipe": "Add",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -297,13 +588,13 @@
       "id": "norm1",
       "type": "block",
       "position": {
-        "x": 1440,
+        "x": 3060,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Layer norm",
+        "label": "Layer norm · attention",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -326,7 +617,37 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.layerNorm(inputs.input1 ?? config.a, config.epsilon ?? 1e-5);\n  emit(state.result);\n  await render();\n}",
         "recipe": "LayerNorm",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w1",
+      "type": "block",
+      "position": {
+        "x": 3400,
+        "y": 600
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "W₁ · FFN expansion · 2 × 4",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,0,1,-0.5],[0,1,0.5,1]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -334,17 +655,17 @@
       "id": "ffn-up",
       "type": "block",
       "position": {
-        "x": 1800,
+        "x": 3400,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Linear projection",
+        "label": "Neural net · H W₁ + b₁",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,2]],\"b\":[[1,0,1,0],[0,1,0,1]],\"c\":[0,0,0,0]}",
+        "value": "{\"a\":[[0,0]],\"b\":[[1,0,1,0],[0,1,0,1]],\"c\":[0.1,0,0.1,0]}",
         "ports": [
           {
             "id": "in-0",
@@ -377,7 +698,7 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\n  emit(state.result);\n  await render();\n}",
         "recipe": "Linear",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -385,13 +706,13 @@
       "id": "activation",
       "type": "block",
       "position": {
-        "x": 2160,
+        "x": 3740,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "GELU",
+        "label": "Neural net · GELU activation",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -414,7 +735,37 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.gelu(inputs.input1 ?? config.a);\n  emit(state.result);\n  await render();\n}",
         "recipe": "GELU",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "state": {}
+      }
+    },
+    {
+      "id": "w2",
+      "type": "block",
+      "position": {
+        "x": 4080,
+        "y": 600
+      },
+      "width": 240,
+      "height": 180,
+      "data": {
+        "label": "W₂ · FFN contraction · 4 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[0.5,0],[0,0.5],[0.5,0],[0,0.5]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "async function run() {\n  await modules.tensorMath.ready;\n  const result = modules.tensorMath.parse(value);\n  const rank = modules.tensorMath.shape(result).length;\n  if (rank !== 2) throw new Error('Enter a rectangular numeric matrix.');\n  state.result = result;\n  emit(result);\n  await render();\n}",
+        "recipe": "Matrix",
+        "render": "async function render() {\n  // Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -422,17 +773,17 @@
       "id": "ffn-down",
       "type": "block",
       "position": {
-        "x": 2520,
+        "x": 4080,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Linear projection",
+        "label": "Neural net · GELU(H W₁ + b₁) W₂ + b₂",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
-        "value": "{\"a\":[[1,2,3,4]],\"b\":[[0.5,0],[0,0.5],[0.5,0],[0,0.5]],\"c\":[0,0]}",
+        "value": "{\"a\":[[0,0,0,0]],\"b\":[[0.5,0],[0,0.5],[0.5,0],[0,0.5]],\"c\":[0,0]}",
         "ports": [
           {
             "id": "in-0",
@@ -465,7 +816,7 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(modules.tensorMath.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\n  emit(state.result);\n  await render();\n}",
         "recipe": "Linear",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -473,13 +824,13 @@
       "id": "residual2",
       "type": "block",
       "position": {
-        "x": 2880,
+        "x": 4420,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Add / residual",
+        "label": "Residual · H + FFN(H)",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -509,7 +860,7 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.add(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\n  emit(state.result);\n  await render();\n}",
         "recipe": "Add",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -517,13 +868,13 @@
       "id": "norm2",
       "type": "block",
       "position": {
-        "x": 3240,
+        "x": 4760,
         "y": 300
       },
-      "width": 260,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Layer norm",
+        "label": "Layer norm · transformer output",
         "kind": "javascript",
         "description": "A programmable, input-driven mask",
         "color": "#171717",
@@ -546,7 +897,7 @@
         ],
         "module": "async function run() {\n  await modules.tensorMath.ready;\n  // Inputs override the example defaults stored in Parameter.\n  const config = JSON.parse(value);\n  if (!modules.tensorMath) throw new Error('Import the math library from Libraries.');\n  state.result = modules.tensorMath.layerNorm(inputs.input1 ?? config.a, config.epsilon ?? 1e-5);\n  emit(state.result);\n  await render();\n}",
         "recipe": "LayerNorm",
-        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
+        "render": "async function render() {\n  // state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n  // Tune precision here; limit rows/columns to keep large tensors readable.\n  const precision = 4;\n  const fontSize = 24; // Font size in pixels; increase for a larger formula.\n  const format = x => x === Infinity ? '∞' : x === -Infinity ? '-∞' : Number(x.toPrecision(precision)).toString();\n  const matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\n  let result = state.result;\n  let prefix = '';\n  if (result?.$ref && Array.isArray(result.rows)) result = result.rows;\n  if (result && Array.isArray(result.shape)) {\n    // Show the first 2D slice; change this slice offset for another tensor page.\n    const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n    prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n    result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n  }\n  while (Array.isArray(result?.[0]?.[0])) result = result[0];\n  const tex = typeof result === 'number' ? format(result)\n    : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\n  return latex(element, prefix + tex, { fontSize });\n}",
         "state": {}
       }
     },
@@ -554,13 +905,13 @@
       "id": "output",
       "type": "block",
       "position": {
-        "x": 3600,
+        "x": 5100,
         "y": 300
       },
-      "width": 300,
-      "height": 200,
+      "width": 240,
+      "height": 180,
       "data": {
-        "label": "Transformer output",
+        "label": "Transformer output · 2 × 2",
         "kind": "renderer",
         "description": "Inspect numbers, vectors, matrices and tensors",
         "color": "#171717",
@@ -570,13 +921,17 @@
             "id": "in-0",
             "name": "in",
             "type": "input",
-            "side": "left"
+            "side": "left",
+            "variable": "input1"
           }
         ],
         "renderer": {
           "precision": 4,
           "slice": 0
-        }
+        },
+        "module": "async function run() {\n  // state.result: the complete input value; it is shared with render().\n  state.result = inputs.input1 ?? inputs['in-0'] ?? null;\n  await render();\n}",
+        "render": "async function render() {\n  // state.result: scalar, vector, matrix, tensor or another JSON value.\n  // Change these defaults, or override them in Properties.\n  const fontSize = renderer?.fontSize ?? 26;\n  const precision = renderer?.precision ?? 4;\n  const slice = renderer?.slice ?? 0;\n  const view = describeValue(state.result, slice);\n  if (view.error) {\n    element.textContent = view.error;\n    return;\n  }\n  if (view.kind === 'No signal') {\n    element.textContent = 'Connect an input';\n    return;\n  }\n  const format = value => formatValue(value, precision);\n  if (!view.shape.length && view.kind !== 'Number') {\n    element.textContent = format(state.result);\n    element.style.font = '16px system-ui';\n    return;\n  }\n  const tex = view.shape.length\n    ? String.raw`\\begin{bmatrix}${view.rows.map(row => row.map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`\n    : format(view.rows[0]?.[0]);\n  return latex(element, tex, { fontSize });\n}",
+        "state": {}
       }
     }
   ],
@@ -590,11 +945,27 @@
       "type": "smoothstep"
     },
     {
+      "id": "w-query-query-1",
+      "source": "w-query",
+      "target": "query",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
       "id": "tokens-key-0",
       "source": "tokens",
       "target": "key",
       "sourceHandle": "out-0",
       "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "w-key-key-1",
+      "source": "w-key",
+      "target": "key",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
       "type": "smoothstep"
     },
     {
@@ -606,32 +977,88 @@
       "type": "smoothstep"
     },
     {
-      "id": "query-attention-0",
+      "id": "w-value-value-1",
+      "source": "w-value",
+      "target": "value",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "key-key-transpose-0",
+      "source": "key",
+      "target": "key-transpose",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "query-scores-0",
       "source": "query",
+      "target": "scores",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "key-transpose-scores-1",
+      "source": "key-transpose",
+      "target": "scores",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "scores-scaled-scores-0",
+      "source": "scores",
+      "target": "scaled-scores",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "scaled-scores-probabilities-0",
+      "source": "scaled-scores",
+      "target": "probabilities",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "probabilities-attention-0",
+      "source": "probabilities",
       "target": "attention",
       "sourceHandle": "out-0",
       "targetHandle": "in-0",
       "type": "smoothstep"
     },
     {
-      "id": "key-attention-1",
-      "source": "key",
+      "id": "value-attention-1",
+      "source": "value",
       "target": "attention",
       "sourceHandle": "out-0",
       "targetHandle": "in-1",
       "type": "smoothstep"
     },
     {
-      "id": "value-attention-2",
-      "source": "value",
-      "target": "attention",
+      "id": "attention-projection-0",
+      "source": "attention",
+      "target": "projection",
       "sourceHandle": "out-0",
-      "targetHandle": "in-2",
+      "targetHandle": "in-0",
       "type": "smoothstep"
     },
     {
-      "id": "attention-residual1-0",
-      "source": "attention",
+      "id": "w0-projection-1",
+      "source": "w0",
+      "target": "projection",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "projection-residual1-0",
+      "source": "projection",
       "target": "residual1",
       "sourceHandle": "out-0",
       "targetHandle": "in-0",
@@ -662,6 +1089,14 @@
       "type": "smoothstep"
     },
     {
+      "id": "w1-ffn-up-1",
+      "source": "w1",
+      "target": "ffn-up",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
       "id": "ffn-up-activation-0",
       "source": "ffn-up",
       "target": "activation",
@@ -675,6 +1110,14 @@
       "target": "ffn-down",
       "sourceHandle": "out-0",
       "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "w2-ffn-down-1",
+      "source": "w2",
+      "target": "ffn-down",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
       "type": "smoothstep"
     },
     {

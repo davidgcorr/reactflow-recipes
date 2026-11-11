@@ -1,3 +1,5 @@
+import { viewerLogic, viewerRender } from './viewer-code';
+import { signalReplacer, signalReviver } from './signal-json';
 import { mathLibrary } from './default-libraries';
 import { defaultLogic, defaultRender, type ControlledPath } from './block-code';
 import type { Signal } from './runtime';
@@ -7,9 +9,9 @@ import type { Edge, Node, Viewport } from '@xyflow/react';
 
 export type Side = 'left' | 'right' | 'top' | 'bottom';
 export type Port = { id: string; name: string; type: 'input' | 'output'; side: Side; offset?: number; variable?: string };
-export type ThemeSettings = { showGrid?: boolean; canvasBackground?: 'plain' | 'aurora' | 'ocean' | 'sunset'; mode: 'light' | 'dark'; hue: number; chroma: number; radius: number };
+export type ThemeSettings = { rough?: boolean; roughness?: number; showGrid?: boolean; canvasBackground?: 'plain' | 'aurora' | 'ocean' | 'sunset'; mode: 'light' | 'dark'; hue: number; chroma: number; radius: number };
 export type BlockVisuals = { background?: string; foreground?: string; showHeader?: boolean; showLabel?: boolean; showValue?: boolean; showPortLabels?: boolean; radius?: number };
-export type FlowSettings = { route?: 'smoothstep' | 'bezier'; points?: { x: number; y: number }[]; animation?: 'none' | 'dash' | 'pulse'; speed?: number; reverse?: boolean; color?: string; width?: number };
+export type FlowSettings = { route?: 'smoothstep' | 'bezier'; points?: { x: number; y: number }[]; animation?: 'none' | 'dash' | 'pulse' | 'glow'; animationSize?: number; speed?: number; reverse?: boolean; color?: string; width?: number };
 export type Canvas = { nodes: BlockNode[]; edges: Edge[]; viewport: Viewport };
 export type BlockData = {
   label: string; kind: string; description: string; color: string; value: string; ports: Port[];
@@ -31,7 +33,7 @@ export type BlockData = {
 export type BlockNode = Node<BlockData, 'block'>;
 export type SavedBlock = { id: string; name: string; width: number; height: number; data: BlockData; modules?: ProjectModule[] };
 export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings; modules?: ProjectModule[]; myBlocks?: SavedBlock[] };
-export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10, showGrid: true, canvasBackground: 'plain' };
+export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10, rough: false, roughness: 1, showGrid: true, canvasBackground: 'plain' };
 export const defaultViewport: Viewport = { x: 80, y: 160, zoom: 1 };
 export const colors = ['#171717', '#404040', '#525252', '#737373', '#a3a3a3', '#d4d4d4'];
 export const templates = [
@@ -75,15 +77,15 @@ export function makeNode(kind: string, position: { x: number; y: number }, id: s
   if (kind === 'javascript') { node.width = 240; node.height = 190; node.data.module = defaultLogic; node.data.render = defaultRender; node.data.state = {}; node.data.ports[0].variable = 'input1'; node.data.ports[1].variable = 'output1'; }
   if (kind === 'compute') { node.width = 240; node.height = 150; node.data.module = defaultComputeSource; node.data.operation = { type: 'code', effect: 'pure' }; node.data.ports[0].variable = 'input1'; node.data.ports[1].id = 'result'; node.data.ports[1].variable = 'result'; }
   if (kind === 'module') { node.width = 220; node.height = 120; }
-  if (kind === 'renderer') { node.width = 280; node.height = 210; node.data.renderer = { precision: 4, slice: 0 }; }
+  if (kind === 'renderer') { node.width = 280; node.height = 210; node.data.renderer = { precision: 4, slice: 0 }; node.data.module = viewerLogic; node.data.render = viewerRender; node.data.state = {}; node.data.ports[0].variable = 'input1'; }
   if (kind === 'python') { node.width = 240; node.height = 190; node.data.module = `def process(inputs, value):
     return inputs.get('in-0', value)
 `; }
-  if (kind === 'inport' || kind === 'outport') node.data.exposedSide = kind === 'inport' ? 'left' : 'right';
+  if (kind === 'inport' || kind === 'outport') { node.data.exposedSide = kind === 'inport' ? 'left' : 'right'; node.width = 28; node.height = 28; node.data.visuals = { showHeader: false }; }
   if (kind === 'subsystem') {
-    const input = makeNode('inport', { x: 0, y: 100 }, `${id}-input`);
+    const input = makeNode('inport', { x: 0, y: 144 }, `${id}-input`);
     const gain = makeNode('gain', { x: 280, y: 100 }, `${id}-gain`);
-    const output = makeNode('outport', { x: 560, y: 100 }, `${id}-output`);
+    const output = makeNode('outport', { x: 560, y: 144 }, `${id}-output`);
     node.data.canvas = { nodes: [input, gain, output], edges: [
       { id: `${id}-e1`, source: input.id, sourceHandle: 'out-0', target: gain.id, targetHandle: 'in-0', type: 'smoothstep' },
       { id: `${id}-e2`, source: gain.id, sourceHandle: 'out-0', target: output.id, targetHandle: 'in-0', type: 'smoothstep' },
@@ -124,12 +126,12 @@ export function updateCanvas<T extends Canvas>(root: T, path: string[], transfor
 function serializeCanvas(canvas: Canvas): Canvas {
   return { viewport: canvas.viewport, nodes: canvas.nodes.map(({ id, type, position, width, height, data }) => ({ id, type, position, width: width ?? 164, height: height ?? 116, data: { ...data, ...(data.canvas ? { canvas: serializeCanvas(data.canvas) } : {}) } })), edges: canvas.edges.map(({ id, source, target, sourceHandle, targetHandle, type, data }) => ({ id, source, target, sourceHandle, targetHandle, type: type ?? 'smoothstep', ...(data ? { data } : {}) })) };
 }
-export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...(diagram.modules ? { modules: diagram.modules } : {}), ...(diagram.myBlocks ? { myBlocks: diagram.myBlocks } : {}), ...serializeCanvas(diagram) }, null, 2); }
+export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...(diagram.modules ? { modules: diagram.modules } : {}), ...(diagram.myBlocks ? { myBlocks: diagram.myBlocks } : {}), ...serializeCanvas(diagram) }, signalReplacer, 2); }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSide = (v: unknown): v is Side => ['left', 'right', 'top', 'bottom'].includes(String(v));
 export function parseDiagram(json: string): Diagram {
-  const d: unknown = JSON.parse(json);
+  const d: unknown = JSON.parse(json, signalReviver);
   if (!record(d) || d.version !== 1 || typeof d.name !== 'string' || !Array.isArray(d.nodes) || !Array.isArray(d.edges)) throw new Error('Expected version 1, a name, nodes, and edges.');
   let totalNodes = 0; let totalEdges = 0;
   function parseCanvas(value: unknown, depth: number): Canvas {
@@ -139,7 +141,7 @@ export function parseDiagram(json: string): Diagram {
     if (totalNodes > 2000 || totalEdges > 10000) throw new Error('Diagram exceeds the 2,000 block / 10,000 connection limit.');
     const nodes: BlockNode[] = []; const ids = new Set<string>();
     for (const n of value.nodes) {
-      if (!record(n) || typeof n.id !== 'string' || !n.id || ids.has(n.id) || n.type !== 'block' || !record(n.position) || !finite(n.position.x) || !finite(n.position.y) || !finite(n.width) || n.width < 120 || !finite(n.height) || n.height < 90 || !record(n.data)) throw new Error('Each block needs a unique ID, type "block", position, width ≥ 120, and height ≥ 90.');
+      if (!record(n) || typeof n.id !== 'string' || !n.id || ids.has(n.id) || n.type !== 'block' || !record(n.position) || !finite(n.position.x) || !finite(n.position.y) || !finite(n.width) || n.width < (record(n.data) && ['inport', 'outport'].includes(String(n.data.kind)) ? 24 : 120) || !finite(n.height) || n.height < (record(n.data) && ['inport', 'outport'].includes(String(n.data.kind)) ? 24 : 90) || !record(n.data)) throw new Error('Each block needs a unique ID, type "block", position, width ≥ 120 and height ≥ 90 (24 × 24 for interface ports).');
       const b = n.data;
       if (['label', 'kind', 'description', 'color', 'value'].some(k => typeof b[k] !== 'string') || !/^#[0-9a-f]{6}$/i.test(String(b.color)) || !Array.isArray(b.ports)) throw new Error(`Invalid data for block ${n.id}.`);
       const portIds = new Set<string>(); const ports: Port[] = [];
@@ -150,6 +152,7 @@ export function parseDiagram(json: string): Diagram {
         portIds.add(p.id); ports.push({ id: p.id, name: p.name, type: p.type as Port['type'], side: p.side, ...(p.offset !== undefined ? { offset: p.offset } : {}), ...(p.variable !== undefined ? { variable: p.variable } : {}) });
       }
       const data: BlockData = { label: b.label as string, kind: b.kind as string, description: b.description as string, color: b.color as string, value: b.value as string, ports, ...parseCodeFields(b, ports) };
+      if (b.kind === 'renderer') { data.module ??= viewerLogic; data.render ??= viewerRender; data.state ??= {}; }
       if (b.operation !== undefined) data.operation = parseOperation(b.operation);
       if (b.kind === 'compute' && !data.operation) throw new Error('Computation blocks need an operation.');
       if (b.projectModuleId !== undefined) { if (typeof b.projectModuleId !== 'string' || !b.projectModuleId || b.projectModuleId.length > 128) throw new Error('Invalid project module reference.'); data.projectModuleId = b.projectModuleId; }
@@ -175,7 +178,7 @@ export function parseDiagram(json: string): Diagram {
         const defined = interfacePorts(data.canvas);
         if (defined.length !== ports.length || defined.some(p => !ports.some(q => q.id === p.id && q.name === p.name && q.side === p.side && q.type === p.type && q.offset === p.offset))) throw new Error(`Parent block ${n.id} ports must match its internal Input and Output blocks.`);
       } else if (b.canvas !== undefined) throw new Error('Only parent blocks can contain a canvas.');
-      ids.add(n.id); nodes.push({ id: n.id, type: 'block', position: { x: n.position.x, y: n.position.y }, width: n.width, height: n.height, data });
+      ids.add(n.id); nodes.push({ id: n.id, type: 'block', position: { x: n.position.x, y: n.position.y }, width: ['inport', 'outport'].includes(data.kind) ? 28 : n.width, height: ['inport', 'outport'].includes(data.kind) ? 28 : n.height, data });
     }
     const edgeIds = new Set<string>(); const occupied = new Set<string>(); const edges: Edge[] = [];
     for (const e of value.edges) {
@@ -192,15 +195,17 @@ export function parseDiagram(json: string): Diagram {
   if (d.theme !== undefined) {
     const t = d.theme;
     if (!record(t) || (t.mode !== 'light' && t.mode !== 'dark') || !finite(t.hue) || t.hue < 0 || t.hue > 360 || !finite(t.chroma) || t.chroma < 0 || t.chroma > 0.22 || !finite(t.radius) || t.radius < 0 || t.radius > 20) throw new Error('Invalid theme: expected mode, hue 0–360, chroma 0–0.22, radius 0–20.');
+    if (t.roughness !== undefined && (!finite(t.roughness) || t.roughness < 0 || t.roughness > 3)) throw new Error('Invalid roughness: expected 0–3.');
+    if (t.rough !== undefined && typeof t.rough !== 'boolean') throw new Error('Invalid rough mode.');
     if (t.showGrid !== undefined && typeof t.showGrid !== 'boolean' || t.canvasBackground !== undefined && !['plain', 'aurora', 'ocean', 'sunset'].includes(String(t.canvasBackground))) throw new Error('Invalid canvas appearance.');
-    theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius, ...(t.showGrid !== undefined ? { showGrid: t.showGrid as boolean } : {}), ...(t.canvasBackground !== undefined ? { canvasBackground: t.canvasBackground as ThemeSettings['canvasBackground'] } : {}) };
+    theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius, ...(t.roughness !== undefined ? { roughness: t.roughness as number } : {}), ...(t.rough !== undefined ? { rough: t.rough as boolean } : {}), ...(t.showGrid !== undefined ? { showGrid: t.showGrid as boolean } : {}), ...(t.canvasBackground !== undefined ? { canvasBackground: t.canvasBackground as ThemeSettings['canvasBackground'] } : {}) };
   }
   let myBlocks: SavedBlock[] | undefined;
   if (d.myBlocks !== undefined) {
     if (!Array.isArray(d.myBlocks) || d.myBlocks.length > 128) throw new Error('Expected up to 128 saved blocks.');
     const savedIds = new Set<string>();
     myBlocks = d.myBlocks.map(b => {
-      if (!record(b) || typeof b.id !== 'string' || !b.id || savedIds.has(b.id) || typeof b.name !== 'string' || !b.name.trim() || b.name.length > 128 || !record(b.data) || b.data.kind !== 'javascript' || b.data.canvas) throw new Error('Invalid saved JavaScript block.');
+      if (!record(b) || typeof b.id !== 'string' || !b.id || savedIds.has(b.id) || typeof b.name !== 'string' || !b.name.trim() || b.name.length > 128 || !record(b.data) || !['javascript', 'renderer'].includes(String(b.data.kind)) || b.data.canvas) throw new Error('Invalid saved programmable block.');
       savedIds.add(b.id);
       const parsed = parseCanvas({ nodes: [{ id: b.id, type: 'block', position: { x: 0, y: 0 }, width: b.width, height: b.height, data: b.data }], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, 1).nodes[0];
       return { id: b.id, name: b.name, width: parsed.width!, height: parsed.height!, data: parsed.data, ...(b.modules !== undefined ? { modules: parseModules(b.modules) } : {}) };
@@ -211,8 +216,8 @@ export function parseDiagram(json: string): Diagram {
 
 export function parseFlowSettings(value: unknown): FlowSettings {
   if (!record(value)) throw new Error('Invalid connection settings.');
-  const { route, points, animation, speed, reverse, color, width } = value;
-  if (route !== undefined && route !== 'smoothstep' && route !== 'bezier' || animation !== undefined && !['none', 'dash', 'pulse'].includes(String(animation)) || speed !== undefined && (!finite(speed) || speed < 0.1 || speed > 20) || width !== undefined && (!finite(width) || width < 1 || width > 8) || reverse !== undefined && typeof reverse !== 'boolean' || color !== undefined && (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) throw new Error('Invalid connection settings.');
+  const { route, points, animation, animationSize, speed, reverse, color, width } = value;
+  if (route !== undefined && route !== 'smoothstep' && route !== 'bezier' || animation !== undefined && !['none', 'dash', 'pulse', 'glow'].includes(String(animation)) || animationSize !== undefined && (!finite(animationSize) || animationSize < 1 || animationSize > 32) || speed !== undefined && (!finite(speed) || speed < 0.1 || speed > 20) || width !== undefined && (!finite(width) || width < 1 || width > 8) || reverse !== undefined && typeof reverse !== 'boolean' || color !== undefined && (typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) throw new Error('Invalid connection settings.');
   if (points !== undefined && (!Array.isArray(points) || points.length > 100 || points.some(p => !record(p) || !finite(p.x) || !finite(p.y)))) throw new Error('Invalid connection waypoints.');
-  return Object.fromEntries(Object.entries({ route, points, animation, speed, reverse, color, width }).filter(([, v]) => v !== undefined)) as FlowSettings;
+  return Object.fromEntries(Object.entries({ route, points, animation, animationSize, speed, reverse, color, width }).filter(([, v]) => v !== undefined)) as FlowSettings;
 }

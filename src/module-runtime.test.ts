@@ -1,34 +1,33 @@
+import { sandbox } from './test-utils/module-sandbox';
 import { describe, expect, it } from 'vitest';
 import { buildBlockModule } from './block-code';
-import type { Signal } from './runtime';
-import { moduleDocument } from './components/module-mask';
-import { makeNode } from './model';
-import type { ModuleDependency } from './code-config';
 
-// Exercise the actual generated sandbox bootstrap without a browser: replace only
-// the module transport, keeping its lifecycle, mappings and message protocol.
-async function sandbox(source: string, dependencies: ModuleDependency[] = [], initialState?: Record<string, Signal>) {
-  const messages: any[] = [], listeners: Record<string, (e: any) => void> = {}, blobs = new Map<string, Blob>(), imports: Record<string, string> = {};
-  const element = { textContent: '', style: {}, children: [] as any[], append(child: any) { this.children.push(child); }, replaceChildren() { this.children = []; } };
-  const document = { getElementById: () => element, body: { style: {} }, createElement: () => ({ type: '', textContent: '' }), head: { append(map: any) { Object.assign(imports, JSON.parse(map.textContent).imports); } } };
-  const parent = { postMessage(message: any) { messages.push(structuredClone(message)); } };
-  const url = { createObjectURL(blob: Blob) { const key = `test:${blobs.size}`; blobs.set(key, blob); return key; }, revokeObjectURL() {} };
-  const importModule = async (specifier: string) => {
-    const blob = blobs.get(imports[specifier] ?? specifier); if (!blob) throw new Error(`Unknown module ${specifier}`);
-    return import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(await blob.text()).toString('base64')}`);
-  };
-  const ports = makeNode('javascript', { x: 0, y: 0 }).data.ports;
-  ports[0].variable = 'signal'; ports[1].variable = 'result';
-  const html = moduleDocument(source, { dependencies, ports, state: initialState, token: 'session' });
-  const script = html.split('<script type="module">')[1].split('</script>')[0].replaceAll('await import(name)', 'await importModule(name)').replaceAll('await import(url)', 'await importModule(url)');
-  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-  await new AsyncFunction('document', 'parent', 'addEventListener', 'URL', 'importModule', script)(document, parent, (name: string, callback: (event: any) => void) => { listeners[name] = callback; }, url, importModule);
-  const send = async (value: string, input: unknown = 3) => {
-    listeners.message({ source: parent, data: { type: 'mask-input', value, inputs: { 'in-0': input }, color: '#123456', background: '#ffffff' } });
-    await new Promise(resolve => setImmediate(resolve));
-  };
-  return { messages, element, send, dispose: () => listeners.pagehide({}) };
-}
+describe('state snapshots crossing the sandbox boundary', () => {
+  it('emits nested matrices read back from observed state without DataCloneError', async () => {
+    const run = await sandbox(buildBlockModule(`state.result = inputs.signal;
+emit(state.result, 'result');
+await render();`, `element.textContent = JSON.stringify(state.result);`));
+    await run.send('0', [[1, 1], [0, 10]]);
+    expect(run.messages.filter(m => m.type === 'mask-error')).toEqual([]);
+    expect(run.messages).toContainEqual({ type: 'mask-output', token: 'session', port: 'out-0', value: [[1, 1], [0, 10]] });
+    expect(run.element.textContent).toBe('[[1,1],[0,10]]');
+    run.dispose();
+  });
+  it('snapshots nested state aliases and event payloads as detached JSON', async () => {
+    const run = await sandbox(buildBlockModule(`state.matrix = inputs.signal;
+state.saved = { matrix: state.matrix };
+state.matrix[0][0] += 1;
+emit(state.saved, 'result');
+emitEvent(state.matrix, 'result');
+await render();`, `element.textContent = JSON.stringify(state.saved);`));
+    await run.send('0', [[1,2],[3,4]]);
+    expect(run.messages.filter(m => m.type === 'mask-error')).toEqual([]);
+    expect(run.messages).toContainEqual({ type: 'mask-state', token: 'session', state: { matrix: [[2,2],[3,4]], saved: { matrix: [[2,2],[3,4]] } } });
+    expect(run.messages).toContainEqual({ type: 'mask-output', token: 'session', port: 'out-0', value: { matrix: [[2,2],[3,4]] } });
+    expect(run.messages).toContainEqual({ type: 'mask-output', token: 'session', port: 'out-0', value: [[2,2],[3,4]], event: true });
+    run.dispose();
+  });
+});
 
 describe('sandbox module bridge', () => {
   it('loads embedded visual dependencies, maps named ports and publishes structured output', async () => {
@@ -53,8 +52,8 @@ describe('sandbox module bridge', () => {
     await run.send('2'); expect(run.element.textContent).toBe('2'); expect(run.messages.at(-1)).toMatchObject({ type: 'mask-output', value: 2 });
     run.dispose();
   });
-  it('rejects nonfinite output and reports compilation failures', async () => {
-    const run = await sandbox('export default function mount({emit}) { emit(Infinity); }');
+  it('rejects NaN output and reports compilation failures', async () => {
+    const run = await sandbox('export default function mount({emit}) { emit(NaN); }');
     await run.send('1'); expect(run.messages.at(-1).type).toBe('mask-error');
     expect(run.messages.some(m => m.type === 'mask-output')).toBe(false);
     const broken = await sandbox('export default broken syntax'); expect(broken.messages.at(-1).type).toBe('mask-error');

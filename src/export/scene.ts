@@ -1,3 +1,4 @@
+import { roughPaths } from '../rough';
 import { portOffset } from '../ports';
 import { connectionPath } from '../connections';
 import { Position } from '@xyflow/react';
@@ -9,7 +10,7 @@ export type ExportOptions = { scope: 'current' | 'system'; width: number; transp
 export const defaultExportOptions: ExportOptions = { scope: 'current', width: 1600, transparent: false, grid: false, title: true, animate: true };
 export type ExportPage = { title: string; path: string[]; canvas: Canvas; index: number; parent: number | null };
 export type ExportWire = { d: string; x: number; y: number };
-export type ExportScene = { width: number; height: number; body: string; wires: ExportWire[]; palette: ExportPalette; title: string };
+export type ExportScene = { width: number; height: number; body: string; wires: ExportWire[]; palette: ExportPalette; title: string; rough?: boolean; roughness?: number };
 export type ExportPalette = { background: string; card: string; foreground: string; muted: string; primary: string; border: string; grid: string; secondary: string };
 const sides: Record<Side, Position> = { left: Position.Left, right: Position.Right, top: Position.Top, bottom: Position.Bottom };
 
@@ -62,7 +63,7 @@ function canvasBounds(canvas: Canvas) {
   if (![x, y, width, height].every(Number.isFinite) || Math.max(width, height) > 10_000_000) throw new Error('This diagram is too spread out to export. Move the blocks closer together.');
   return { x, y, width, height };
 }
-function renderBlock(node: BlockNode, index: string, palette: ExportPalette, radius: number, destination?: number): string {
+function renderBlock(node: BlockNode, index: string, palette: ExportPalette, radius: number, destination?: number, sketch = false, roughness = 1): string {
   const { data } = node; const v = data.visuals ?? {};
   palette = { ...palette, card: v.background ?? palette.card, primary: v.foreground ?? palette.primary };
   radius = v.radius ?? radius;
@@ -80,14 +81,18 @@ function renderBlock(node: BlockNode, index: string, palette: ExportPalette, rad
   if (data.kind === 'renderer') symbol = text(w / 2, h / 2 + 8, 'Value renderer', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (data.kind === 'python') symbol = text(w / 2, h / 2 + 8, 'Python code', 18, `text-anchor="middle" fill="${palette.primary}"`);
   if (data.kind === 'javascript') symbol = text(w / 2, h / 2 + 8, data.recipe ?? 'JS module', 18, `text-anchor="middle" fill="${palette.primary}"`);
+  if (boundary) symbol = text(w / 2, h / 2 + 5, data.kind === 'inport' ? '→' : '←', 14, `text-anchor="middle" fill="${palette.primary}"`);
   if (v.showValue === false) symbol = '';
   const ports = data.ports.map(port => {
     const absolute = handlePoint(node, port); const x = absolute.x - node.position.x, y = absolute.y - node.position.y;
     const left = port.side === 'left', right = port.side === 'right', top = port.side === 'top';
-    return `<circle cx="${x}" cy="${y}" r="5.5" fill="${palette.card}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/><circle cx="${x}" cy="${y}" r="2.5" fill="${port.type === 'input' ? palette.card : palette.primary}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/>` + (v.showPortLabels === false ? '' : text(left ? x + 12 : right ? x - 12 : x, left || right ? y + 2 : top ? y + 17 : y - 11, port.name, 7, `text-anchor="${left ? 'start' : right ? 'end' : 'middle'}" fill="${palette.muted}" clip-path="url(#${clip})"`));
+    return `<circle cx="${x}" cy="${y}" r="${boundary ? 3 : 5.5}" fill="${palette.card}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/><circle cx="${x}" cy="${y}" r="2.5" fill="${port.type === 'input' ? palette.card : palette.primary}" stroke="${port.type === 'input' ? '#0284c7' : palette.primary}"/>` + (v.showPortLabels === false || boundary ? '' : text(left ? x + 12 : right ? x - 12 : x, left || right ? y + 2 : top ? y + 17 : y - 11, port.name, 7, `text-anchor="${left ? 'start' : right ? 'end' : 'middle'}" fill="${palette.muted}" clip-path="url(#${clip})"`));
   }).join('');
   const interactive = destination === undefined ? '' : ` data-enter="${destination}" role="button" tabindex="0" aria-label="${escapeXml(`Enter ${data.label}`)}" style="cursor:pointer"`;
-  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="12" y="${h + 4}" width="${w - 24}" height="24"/></clipPath></defs><rect width="${w}" height="${h}" rx="${Math.min(radius, w / 2, h / 2)}" fill="${palette.card}" stroke="${palette.border}"${boundary ? ' stroke-dasharray="4 3"' : ''}/>${v.showHeader === false ? '' : `<path d="M0 25H${w}" stroke="${palette.border}"/>` + text(10, 16, typePath, 8, `opacity="0.65" fill="${palette.muted}" clip-path="url(#${clip})"`)}${symbol}${v.showLabel === false ? '' : text(w / 2, h + 20, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h + 10} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
+  const outlinePath = boundary ? `M ${w/2} 2 A ${w/2-2} ${h/2-2} 0 1 1 ${w/2-.01} 2` : `M2 2H${w-2}V${h-2}H2Z`;
+  const outline = sketch ? roughPaths(outlinePath,index,palette.primary,1.2,roughness).map(p=>`<path d="${p.d}" fill="none" stroke="${p.stroke}" stroke-width="${p.strokeWidth}"/>`).join('') : '';
+  const frame = boundary ? `<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2-2}" ry="${h/2-2}" fill="${palette.card}" stroke="${sketch ? 'none' : palette.border}"/>` : `<rect width="${w}" height="${h}" rx="${Math.min(radius,w/2,h/2)}" fill="${palette.card}" stroke="${sketch ? 'none' : palette.border}"/>`;
+  return `<g data-block="${index}" transform="translate(${node.position.x} ${node.position.y})"${interactive}><title>${escapeXml(data.label + (data.description ? ': ' + data.description : ''))}</title><defs><clipPath id="${clip}"><rect x="6" y="5" width="${w - 12}" height="${h - 10}"/></clipPath><clipPath id="${textClip}"><rect x="${boundary ? w/2-75 : 12}" y="${h + 4}" width="${boundary ? 150 : w - 24}" height="24"/></clipPath></defs>${frame}${outline}${v.showHeader === false || boundary ? '' : `<path d="M0 25H${w}" stroke="${palette.border}"/>` + text(10, 16, typePath, 8, `opacity="0.65" fill="${palette.muted}" clip-path="url(#${clip})"`)}${symbol}${v.showLabel === false ? '' : text(w / 2, h + 20, data.label, 10, `text-anchor="middle" fill="${palette.muted}" clip-path="url(#${textClip})"`)}${parent ? `<path d="m${w - 20} ${h + 10} 4 4-4 4" fill="none" stroke="${palette.muted}" stroke-width="1.2"/>` : ''}${ports}</g>`;
 }
 export function buildScene(diagram: Diagram, pages: ExportPage[], options: ExportOptions, interactive = false): ExportScene {
   const theme = diagram.theme ?? defaultTheme; const palette = exportPalette(theme);
@@ -108,16 +113,17 @@ export function buildScene(diagram: Diagram, pages: ExportPage[], options: Expor
       const settings = { route: edge.type === 'default' ? 'bezier' : 'smoothstep', ...edge.data } as FlowSettings;
       const d = connectionPath({ sourceX: a.x, sourceY: a.y, sourcePosition: sides[out.side], targetX: b.x, targetY: b.y, targetPosition: sides[input.side] }, settings);
       wires.push({ d, x, y });
-      return `<path d="${d}" fill="none" stroke="${settings.color ?? palette.muted}" stroke-width="${settings.width ?? 1.5}" marker-end="url(#arrow)"/>`;
+      const sketch = theme.rough ? roughPaths(d,edge.id,settings.color ?? palette.muted,settings.width ?? 1.5,theme.roughness ?? 1).map(p=>`<path d="${p.d}" fill="none" stroke="${p.stroke}" stroke-width="${p.strokeWidth}"/>`).join('') : '';
+      return sketch + `<path d="${d}" fill="none" stroke="${theme.rough ? 'none' : settings.color ?? palette.muted}" stroke-width="${settings.width ?? 1.5}" marker-end="url(#arrow)"/>`;
     }).join('');
-    const blocks = sheet.canvas.nodes.map((node, i) => renderBlock(node, `${sheet.index}-${i}`, palette, theme.radius - 1, interactive ? pages.find(p => p.path.length === sheet.path.length + 1 && p.path.slice(0, -1).every((id, j) => id === sheet.path[j]) && p.path.at(-1) === node.id)?.index : undefined)).join('');
+    const blocks = sheet.canvas.nodes.map((node, i) => renderBlock(node, `${sheet.index}-${i}`, palette, theme.radius - 1, interactive ? pages.find(p => p.path.length === sheet.path.length + 1 && p.path.slice(0, -1).every((id, j) => id === sheet.path[j]) && p.path.at(-1) === node.id)?.index : undefined, theme.rough === true, theme.roughness ?? 1)).join('');
     const title = heading ? `<text x="32" y="${yOffset + 36}" font-size="13" font-weight="600" fill="${palette.foreground}">${escapeXml(sheet.title)}</text><path d="M32 ${yOffset + 52}H${width - 32}" stroke="${palette.border}"/>` : '';
     const separator = yOffset ? `<path d="M0 ${yOffset}H${width}" stroke="${palette.border}"/>` : '';
     const empty = sheet.canvas.nodes.length ? '' : `<text x="${width / 2}" y="${yOffset + sheetHeight / 2}" text-anchor="middle" font-size="14" fill="${palette.muted}">Empty canvas</text>`;
     yOffset += sheetHeight;
     return `${separator}${title}<g transform="translate(${x} ${y})">${paths}${blocks}</g>${empty}`;
   }).join('');
-  return { width, height: Math.max(200, yOffset), body, wires, palette, title: pages[0]?.title || diagram.name };
+  return { width, height: Math.max(200, yOffset), body, wires, palette, ...(theme.rough ? { rough: true, roughness: theme.roughness ?? 1 } : {}), title: pages[0]?.title || diagram.name };
 }
 export function rasterSize(scene: Pick<ExportScene, 'width' | 'height'>, requestedWidth: number, format: 'png' | 'gif' = 'png') {
   const limit = format === 'gif' ? 2_000_000 : 16_000_000;
@@ -126,7 +132,8 @@ export function rasterSize(scene: Pick<ExportScene, 'width' | 'height'>, request
 }
 export function sceneSvg(scene: ExportScene, options: Pick<ExportOptions, 'transparent' | 'grid'>, size?: { width: number; height: number }): string {
   const { palette: p, width, height } = scene;
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size?.width ?? width}" height="${size?.height ?? height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="diagram-title" font-family="Inter,Arial,Helvetica,sans-serif"><title id="diagram-title">${escapeXml(scene.title)}</title><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 9 5 1 9z" fill="${p.muted}"/></marker><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="${p.grid}"/></pattern></defs>${options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${p.background}"/>`}${options.grid ? `<rect width="${width}" height="${height}" fill="url(#grid)"/>` : ''}${scene.body}</svg>`;
+  const arrow = scene.rough ? roughPaths('M1 1L9 5L1 9','export-arrow',p.muted,1.3,scene.roughness ?? 1).map(path=>`<path d="${path.d}" fill="none" stroke="${path.stroke}" stroke-width="${path.strokeWidth}"/>`).join('') : `<path d="M1 1 9 5 1 9z" fill="${p.muted}"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${size?.width ?? width}" height="${size?.height ?? height}" viewBox="0 0 ${width} ${height}" role="img" aria-labelledby="diagram-title" font-family="Inter,Arial,Helvetica,sans-serif"><title id="diagram-title">${escapeXml(scene.title)}</title><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">${arrow}</marker><pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="0.8" fill="${p.grid}"/></pattern></defs>${options.transparent ? '' : `<rect width="${width}" height="${height}" fill="${p.background}"/>`}${options.grid ? `<rect width="${width}" height="${height}" fill="url(#grid)"/>` : ''}${scene.body}</svg>`;
 }
 export function exportFilename(name: string, extension: ExportFormat): string {
   const base = name.trim().replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase() || 'milver';

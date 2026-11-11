@@ -1,14 +1,15 @@
+import { stringifySignal } from '../signal-json';
 import { jsRecipes } from '../js-recipes';
 import { canvasAt, type BlockData, type Canvas, type Diagram, type Port } from '../model';
 import type { ProjectModule } from './schema';
 export type Link = { node: string; port: string };
 export type RuntimeNode = { id: string; data: Pick<BlockData, 'kind' | 'value' | 'module' | 'operation' | 'recipe' | 'renderer' | 'ports'> & { nativeRecipe?: boolean }; inputs: Record<string, Link>; aliases: Record<string, Link> };
 export type ProjectPlan = { modules: ProjectModule[]; nodes: RuntimeNode[] };
-export const nodeKey = (path: string[], id: string) => JSON.stringify([...path, id]);
+export const nodeKey = (path: string[], id: string) => stringifySignal([...path, id]);
 export function compileProject(project: Diagram): ProjectPlan {
   const nodes: RuntimeNode[] = [];
   function resolve(canvas: Canvas, path: string[], id: string, port: string, seen = new Set<string>()): Link | undefined {
-    const key = JSON.stringify([path, id, port]); if (seen.has(key)) throw new Error('Cyclic nested interface wiring.'); seen.add(key);
+    const key = stringifySignal([path, id, port]); if (seen.has(key)) throw new Error('Cyclic nested interface wiring.'); seen.add(key);
     const node = canvas.nodes.find(n => n.id === id); if (!node) return;
     if (node.data.canvas) {
       const outport = node.data.canvas.nodes.find(n => n.id === port && n.data.kind === 'outport');
@@ -43,8 +44,8 @@ export function compileProject(project: Diagram): ProjectPlan {
 }
 // Positions, labels, port sides, and view settings do not change computation identity.
 export function definitionKey(plan: ProjectPlan) {
-  return JSON.stringify({ modules: plan.modules, nodes: plan.nodes.map(n => ({ id: n.id, kind: n.data.kind, module: n.data.module, operation: n.data.operation, recipe: n.data.recipe, nativeRecipe: n.data.nativeRecipe, ports: n.data.ports.map(p => [p.id, p.type, p.variable]), inputs: n.inputs, aliases: n.aliases })) });
+  return stringifySignal({ modules: plan.modules, nodes: plan.nodes.map(n => ({ id: n.id, kind: n.data.kind, module: n.data.module, operation: n.data.operation, recipe: n.data.recipe, nativeRecipe: n.data.nativeRecipe, ports: n.data.ports.map(p => [p.id, p.type, p.variable]), inputs: n.inputs, aliases: n.aliases })) });
 }
 export function executionKey(plan: ProjectPlan) {
-  return JSON.stringify([definitionKey(plan), plan.nodes.map(n => [n.id, n.data.value, n.data.renderer])]);
+  return stringifySignal([definitionKey(plan), plan.nodes.map(n => [n.id, n.data.value, n.data.renderer])]);
 }

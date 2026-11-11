@@ -1,3 +1,4 @@
+import { stringifySignal } from './signal-json';
 import type { Signal } from './runtime';
 export type ValueView = { kind: string; shape: number[]; rows: Signal[][]; slices: number; slice: number; error?: string };
 function shapeOf(value: Signal): number[] | null {
@@ -27,5 +28,5 @@ export function describeValue(value: Signal, requestedSlice = 0): ValueView {
   return { kind: shape.length === 1 ? 'Vector' : shape.length === 2 ? 'Matrix' : 'Tensor', shape, rows, slices, slice };
 }
 export function formatValue(value: Signal, precision: number): string {
-  return typeof value === 'number' ? Number(value.toFixed(precision)).toString() : value === null ? '—' : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  return typeof value === 'number' ? value === Infinity ? '∞' : value === -Infinity ? '-∞' : Number(value.toFixed(precision)).toString() : value === null ? '—' : typeof value === 'object' ? stringifySignal(value) : String(value);
 }

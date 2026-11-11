@@ -1,3 +1,4 @@
+import { signalReplacer } from '../signal-json';
 import type { ProjectPlan, RuntimeNode } from './graph';
 import type { Namespace } from './loader';
 import { isSignal, type Signal, type Signals } from '../runtime';
@@ -64,7 +65,7 @@ export class ProjectEngine {
   }
   private describeSnapshot(value: unknown, slice = 0, depth = 0): Signal {
     if (value === undefined || value === null) return null;
-    if (typeof value === 'number') return Number.isFinite(value) ? value : String(value);
+    if (typeof value === 'number') return !Number.isNaN(value) ? value : 'NaN';
     if (typeof value === 'string') return value.slice(0, 10000);
     if (typeof value === 'boolean') return value;
     if (typeof value === 'bigint') return String(value);
@@ -119,7 +120,7 @@ export class ProjectEngine {
         for (const [port, link] of Object.entries(node.aliases)) { const source = await visit(link.node); if (source.status === 'error' || source.status === 'blocked') throw new Error('Upstream block failed.'); if (!Object.hasOwn(source.outputs, link.port)) throw new Error('Upstream block has not executed.'); aliasOutputs[port] = source.outputs[link.port]; aliasEvents[port] = source.events[link.port] ?? 0; }
         began = performance.now();
         const operation = node.data.operation;
-        const signature = JSON.stringify([node.data.value, Object.entries(inputs).map(([k, v]) => [k, this.identity(v), inputEvents[k]]), Object.entries(aliasOutputs).map(([k, v]) => [k, this.identity(v)]), external[id]?.values, external[id]?.events, node.data.recipe === 'Clock' ? Math.floor((Date.now() - this.clockStart) / Math.max(16, Number(node.data.value) || 1000)) : null]);
+        const signature = JSON.stringify([node.data.value, Object.entries(inputs).map(([k, v]) => [k, this.identity(v), inputEvents[k]]), Object.entries(aliasOutputs).map(([k, v]) => [k, this.identity(v)]), external[id]?.values, external[id]?.events, node.data.recipe === 'Clock' ? Math.floor((Date.now() - this.clockStart) / Math.max(16, Number(node.data.value) || 1000)) : null], signalReplacer);
         const previous = this.cache.get(id);
         const hasTrigger = !!node.inputs.trigger;
         const initialEvent = (inputEvents.trigger ?? 0) > 0 || ![undefined, null, false, 0].includes(inputs.trigger as never);

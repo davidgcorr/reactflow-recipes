@@ -1,3 +1,4 @@
+import { signalReviver } from './signal-json';
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-cpu';
 export { tf };
@@ -20,8 +21,8 @@ function nested(value) {
   return value;
 }
 function dimensions(value) {
-  if (typeof value === 'number' && Number.isFinite(value)) return [];
-  if (!Array.isArray(value) || !value.length) throw new Error('Expected nonempty finite numeric data.');
+  if (typeof value === 'number' && !Number.isNaN(value)) return [];
+  if (!Array.isArray(value) || !value.length) throw new Error('Expected nonempty numeric data without NaN.');
   const inner=dimensions(value[0]);
   if (!value.every(row=>JSON.stringify(dimensions(row))===JSON.stringify(inner))) throw new Error('Arrays must be rectangular.');
   return [value.length,...inner];
@@ -31,8 +32,8 @@ export function tensor(value) { value=nested(value); dimensions(value); return t
 export function normalize(value) { value=nested(value); dimensions(value); return tf.tidy(()=>tensor(value).arraySync()); }
 export function parse(value) {
   if (typeof value !== 'string') return normalize(value);
-  try { return normalize(JSON.parse(value.replace(/,\s*([\]])/g,'$1'))); }
-  catch(error) { throw new Error('Enter a finite number or rectangular nested list, e.g. [1,2,3] or [[1,2],[3,4]]. ' + error.message); }
+  try { return normalize(JSON.parse(value.replace(/"(?:\\.|[^"\\])*"|(?<![\w$.])[+-]?(?:infinity|inf|∞)(?![\w$.])/gi, token => token.startsWith('"') ? token : JSON.stringify({ $number: token.startsWith('-') ? '-Infinity' : 'Infinity' })).replace(/,\s*([\]])/g,'$1'), signalReviver)); }
+  catch(error) { throw new Error('Enter a number (including inf / -inf) or rectangular nested list, e.g. [1,2,3] or [[1,2],[3,4]]. ' + error.message); }
 }
 function calculate(operation) { return tf.tidy(()=>operation().arraySync()); }
 export const add=(a,b)=>calculate(()=>tf.add(tensor(a),tensor(b)));

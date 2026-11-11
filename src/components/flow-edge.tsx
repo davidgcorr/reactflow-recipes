@@ -1,16 +1,20 @@
-import { createContext, useContext } from 'react';
+import { RoughContext, RoughPath } from './rough-shapes';
+import { createContext, useContext, useId } from 'react';
 import { BaseEdge, useReactFlow, type EdgeProps } from '@xyflow/react';
 import { connectionPath } from '@/connections';
 import type { FlowSettings } from '@/model';
 export const FlowContext = createContext({ update: (_id: string, _patch: FlowSettings, _remember?: boolean) => {}, snapshot: () => {} });
 export function FlowEdge(props: EdgeProps) {
   const { id, selected, data } = props;
+  const { enabled: rough } = useContext(RoughContext);
   const settings = (data ?? {}) as FlowSettings;
   const { update, snapshot } = useContext(FlowContext);
   const flow = useReactFlow();
   const path = connectionPath(props, settings);
   const color = settings.color ?? 'var(--muted-foreground)';
   const speed = settings.speed ?? 2;
+  const glowId = useId().replace(/:/g, '');
+  const size = settings.animationSize ?? (settings.animation === 'dash' ? 2.5 : 7);
   return <g onDoubleClick={event => {
     event.stopPropagation();
     const p = flow.screenToFlowPosition({ x: event.clientX, y: event.clientY });
@@ -26,10 +30,11 @@ export function FlowEdge(props: EdgeProps) {
     }
     points.splice(index, 0, p); update(id, { points });
   }}>
-    <defs><marker id={`recipe-arrow-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 9 5 1 9z" fill={color}/></marker></defs>
-    <BaseEdge id={id} path={path} markerEnd={`url(#recipe-arrow-${id})`} style={{ stroke: color, strokeWidth: settings.width ?? 1.5 }}/>
-    {settings.animation === 'dash' && <path d={path} className="flow-dashes" fill="none" stroke={color} strokeWidth={(settings.width ?? 1.5) + 1} strokeDasharray="6 9" style={{ animationDuration: `${speed}s`, animationDirection: settings.reverse ? 'reverse' : 'normal' }} pointerEvents="none"/>}
-    {settings.animation === 'pulse' && <circle r={3.5} fill={color} pointerEvents="none"><animateMotion dur={`${speed}s`} repeatCount="indefinite" path={path} keyPoints={settings.reverse ? '1;0' : '0;1'} keyTimes="0;1" calcMode="linear"/></circle>}
+    <defs><filter id={glowId} x="-150%" y="-150%" width="400%" height="400%"><feGaussianBlur stdDeviation={size / 3}/><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter><marker id={`recipe-arrow-${id}`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">{rough ? <RoughPath id={`arrow-${id}`} d="M1 1L9 5L1 9" color={color} width={1.3}/> : <path d="M1 1 9 5 1 9z" fill={color}/>}</marker></defs>
+    <BaseEdge id={id} path={path} markerEnd={`url(#recipe-arrow-${id})`} style={{ stroke: rough ? 'transparent' : color, strokeOpacity: rough ? 0 : 1, strokeWidth: settings.width ?? 1.5 }}/>
+    {rough && <><RoughPath d={path} id={id} color={color} width={settings.width ?? 1.5}/><path d={path} fill="none" stroke="none" markerEnd={`url(#recipe-arrow-${id})`}/></>}
+    {settings.animation === 'dash' && <path d={path} className="flow-dashes" fill="none" stroke={color} strokeWidth={size} strokeDasharray="6 9" style={{ animationDuration: `${speed}s`, animationDirection: settings.reverse ? 'reverse' : 'normal' }} pointerEvents="none"/>}
+    {(settings.animation === 'pulse' || settings.animation === 'glow') && <circle className="flow-pulse" r={size / 2} filter={settings.animation === 'glow' ? `url(#${glowId})` : undefined} fill={color} pointerEvents="none"><animateMotion dur={`${speed}s`} repeatCount="indefinite" path={path} keyPoints={settings.reverse ? '1;0' : '0;1'} keyTimes="0;1" calcMode="linear"/></circle>}
     {selected && settings.points?.map((point, index) => <circle key={index} cx={point.x} cy={point.y} r={6} className="route-point nodrag nopan" aria-label={`Waypoint ${index + 1}`} onDoubleClick={e => { e.stopPropagation(); update(id, { points: settings.points!.filter((_, i) => i !== index) }); }} onPointerDown={event => {
       event.stopPropagation(); event.preventDefault(); snapshot();
       const target = event.currentTarget; target.setPointerCapture(event.pointerId);

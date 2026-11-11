@@ -12,6 +12,8 @@ import { createElement, isValidElement } from 'react';
 import katex from 'katex';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Inspector } from './components/inspector';
+import { CodeProperties } from './components/code-properties';
+import { RenderProperties } from './components/render-properties';
 import { portAtBorder } from './ports';
 
 class Element {
@@ -101,7 +103,9 @@ describe('JSON ↔ UI code contract', () => {
     const next = updateCanvas(d, ['parent'], c => ({ ...c, nodes: [...c.nodes, child] }));
     const restored = parseDiagram(serializeDiagram(next)); const node = restored.nodes.at(-1)!.data.canvas!.nodes.at(-1)!;
     const markup = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(Inspector, { node, nodes: [node], activePort: null, setActivePort() {}, update() {}, resize() {}, updatePort() {}, removePort() {}, addPort() {}, enter() {}, duplicate() {}, remove() {}, updateEdge() {} })));
-    expect(markup).toContain('Properties'); expect(markup).toContain('tab-code'); expect(markup).toContain('JavaScript source'); expect(markup).toContain('value="input1"'); expect(markup).toContain('add.wasm');
+    expect(markup).toContain('Properties'); expect(markup).toContain('tab-code'); expect(markup).not.toContain('JavaScript source');
+    const code = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(CodeProperties, { node, update() {} })));
+    expect(code).toContain('JavaScript source'); expect(code).toContain('value="input1"'); expect(code).toContain('add.wasm');
     expect(node.data).toEqual(child.data);
   });
   it('rejects duplicate and invalid mappings, dependency URLs and malformed Wasm/configuration', () => {
@@ -123,9 +127,9 @@ describe('JSON ↔ UI code contract', () => {
 });
 
 describe('structured signal rendering and propagation', () => {
-  it('accepts bounded arrays and tensors and rejects cyclic, nonfinite and oversized messages', () => {
+  it('accepts bounded arrays and tensors and supports infinity but rejects cyclic, NaN and oversized messages', () => {
     expect(isSignal({ shape: [2, 2], data: [1, 2, 3, 4] })).toBe(true);
-    expect(isSignal([NaN])).toBe(false); expect(isSignal(Infinity)).toBe(false); expect(isSignal(new Array(13000).fill(1))).toBe(false);
+    expect(isSignal([NaN])).toBe(false); expect(isSignal(Infinity)).toBe(true); expect(isSignal(new Array(13000).fill(1))).toBe(false);
     const cycle: any = []; cycle.push(cycle); expect(isSignal(cycle)).toBe(false);
     expect(isSignal(JSON.parse('{"__proto__":42}'))).toBe(false);
     expect(signalsEqual([[1, 2]], [[1, 2]])).toBe(true);
@@ -167,10 +171,12 @@ describe('editable logic, render and ownership JSON', () => {
     expect(restored.nodes[0].data.render).toContain('state.result');
     const markup = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(Inspector, { node: restored.nodes[0], nodes: restored.nodes, activePort: null, setActivePort() {}, update() {}, resize() {}, updatePort() {}, removePort() {}, addPort() {}, enter() {}, duplicate() {}, remove() {}, updateEdge() {} })));
     expect(markup).toMatch(/disabled=""[^>]*aria-label="Block name"/);
-    expect(markup).toMatch(/disabled=""[^>]*aria-label="Block width"/);
-    expect(markup).toMatch(/disabled=""[^>]*aria-label="Block fill"/);
-    expect(markup).toContain('Render function source');
-    expect(markup).toContain('Block JSON');
+    const render = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(RenderProperties, { node: restored.nodes[0], update() {}, resize() {} })));
+    expect(render).toMatch(/disabled=""[^>]*aria-label="Block width"/);
+    expect(render).toMatch(/disabled=""[^>]*aria-label="Block fill"/);
+    expect(render).toContain('Render function source');
+    expect(markup).not.toContain('Render function source');
+    expect(markup).toContain('tab-json');
     const properties = markup.split('id="panel-properties"')[1].split('id="panel-render"')[0];
     expect(properties).not.toContain('Runtime');
     expect(properties).not.toContain('Inputs → outputs');

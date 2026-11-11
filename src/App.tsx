@@ -1,5 +1,9 @@
+import { ProjectsDialog } from './components/projects-dialog';
+import { RoughContext } from './components/rough-shapes';
+import { stringifySignal } from './signal-json';
 import { copySelection, parseClipboard, pasteSelection, mergeClipboardLibraries, type BlockClipboard } from './clipboard';
 import forwardExample from '../examples/transformer-forward.json?raw';
+import attentionExample from '../examples/attention-step-by-step.json?raw';
 import { MyBlocks } from './components/my-blocks';
 import { ResizablePanel } from './components/resizable-panel';
 import { withMath } from './default-libraries';
@@ -12,7 +16,7 @@ import {
 } from '@xyflow/react';
 import {
   ArrowUpRight, Braces, Check, ChevronDown, ChevronRight, CircleHelp, Copy, Download, Expand,
-  Grid3X3, Hand, Home, Map, Menu, Minus, MousePointer2, Network,
+  Eraser, FolderOpen, Grid3X3, Hand, Home, Map, Menu, Minus, MousePointer2, Network,
   Palette, PanelRight, Pause, Play, RotateCcw, Square, StepForward, Plus, Redo2, Undo2, Upload,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -32,7 +36,7 @@ import { PreviewContext } from '@/components/module-mask';
 import { previewSignals, signalsEqual, type Signals, type Signal } from '@/runtime';
 import { Inspector } from '@/components/inspector';
 import {
-  canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
+  isInterface, canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
   makeNode, parseDiagram, serializeDiagram, templates, updateCanvas,
   type SavedBlock, type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
 } from '@/model';
@@ -80,6 +84,7 @@ function Editor() {
   const [activePort, setActivePort] = useState<string | null>(null);
   const [jsonOpen, setJsonOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [projectsOpen, setProjectsOpen] = useState(false);
   const [json, setJson] = useState('');
   const [jsonError, setJsonError] = useState('');
   const [helpOpen, setHelpOpen] = useState(false);
@@ -107,7 +112,7 @@ function Editor() {
   }, []);
   const moduleVersions = useRef<Record<string, string>>({});
   const legacyVersions: Record<string, string> = {};
-  const collectVersions = (c: Canvas, parent: string[] = []) => { for (const n of c.nodes) { if (n.data.kind === 'javascript') legacyVersions[nodeKey(parent, n.id)] = JSON.stringify([document.modules, n.data.module, n.data.render, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])]); if (n.data.canvas) collectVersions(n.data.canvas, [...parent, n.id]); } };
+  const collectVersions = (c: Canvas, parent: string[] = []) => { for (const n of c.nodes) { if (['javascript', 'renderer'].includes(n.data.kind)) legacyVersions[nodeKey(parent, n.id)] = JSON.stringify([document.modules, n.data.module, n.data.render, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])]); if (n.data.canvas) collectVersions(n.data.canvas, [...parent, n.id]); } };
   collectVersions(document);
   const runtimeKey = JSON.stringify(legacyVersions);
   useEffect(() => {
@@ -132,7 +137,7 @@ function Editor() {
   }, [replace, snapshot]);
   const setSourceValue = useCallback((id: string, value: string) => {
     const current = canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id);
-    if (!current || current.data.kind !== 'javascript' || current.data.value === value) return;
+    if (!current || !['javascript', 'renderer'].includes(current.data.kind) || current.data.value === value) return;
     editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, value } } : n) }));
   }, [editCanvas]);
   const saveBlockState = useCallback((id: string, state: Record<string, Signal>) => {
@@ -282,7 +287,7 @@ function Editor() {
     editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? { ...n, data: { ...n.data, ...patch } } : n) }));
   };
   const resize = (dimension: 'width' | 'height', value: number) => {
-    if (!selected || value < (dimension === 'width' ? 120 : 90) || value > 2000) return;
+    if (!selected || value < (isInterface(selected) ? 24 : dimension === 'width' ? 120 : 90) || value > 2000) return;
     editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === selected.id ? { ...n, [dimension]: value } : n) }));
   };
   const mutateSelectedPorts = (transform: (n: BlockNode) => BlockNode) => {
@@ -324,7 +329,7 @@ function Editor() {
     const payload = copySelection(canvasAt(documentRef.current, pathRef.current), documentRef.current.modules ?? []);
     if (!payload) return;
     blockClipboard.current = payload; pasteCount.current = 0;
-    void navigator.clipboard?.writeText(JSON.stringify(payload)).catch(() => {});
+    void navigator.clipboard?.writeText(stringifySignal(payload)).catch(() => {});
     notify(`Copied ${payload.canvas.nodes.length} block${payload.canvas.nodes.length === 1 ? '' : 's'}`);
   };
   const pasteBlocks = async () => {
@@ -386,7 +391,7 @@ function Editor() {
     crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
   }
 
-  return <TooltipProvider delayDuration={250}><ProjectContext.Provider value={{ myBlocks: document.myBlocks ?? [], saveBlock, insertSavedBlock, removeSavedBlock: id => { snapshot(); replace({ ...documentRef.current, myBlocks: documentRef.current.myBlocks?.filter(b => b.id !== id) }); }, modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: () => { snapshot(); goTo([]); replace(parseDiagram(forwardExample)); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue, saveState: saveBlockState, setProperty: setCodeProperty, report: reportMask }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
+  return <TooltipProvider delayDuration={250}><RoughContext.Provider value={{ enabled: theme.rough === true, roughness: theme.roughness ?? 1 }}><ProjectContext.Provider value={{ myBlocks: document.myBlocks ?? [], saveBlock, insertSavedBlock, removeSavedBlock: id => { snapshot(); replace({ ...documentRef.current, myBlocks: documentRef.current.myBlocks?.filter(b => b.id !== id) }); }, modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: example => { snapshot(); goTo([]); replace(parseDiagram(example === 'attention' ? attentionExample : forwardExample)); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue, saveState: saveBlockState, setProperty: setCodeProperty, report: reportMask }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className={`milver-workspace ${theme.rough ? 'rough-mode' : ''}`} aria-label="milver block diagram editor">
     <ReactFlow<BlockNode> style={{ background: canvasBackground(theme) }}
       nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
@@ -404,7 +409,7 @@ function Editor() {
       defaultEdgeOptions={{ type: 'smoothstep', markerEnd: { type: MarkerType.ArrowClosed, width: 18, height: 18, color: 'var(--muted-foreground)' }, style: { stroke: 'var(--muted-foreground)', strokeWidth: 1.5 } }}
       deleteKeyCode={null} fitView={initial.fit} fitViewOptions={{ padding: 0.35, maxZoom: 1 }} proOptions={{ hideAttribution: true }}
     >
-      {theme.showGrid !== false && <Background variant={BackgroundVariant.Dots} color="var(--grid-color)" gap={20} size={1}/>}
+      {theme.showGrid !== false && <Background bgColor="transparent" variant={BackgroundVariant.Dots} color="var(--grid-color)" gap={20} size={1}/>}
       {ui.minimap && <MiniMap className="diagram-minimap" nodeColor="var(--primary)" maskColor="var(--background)" maskStrokeColor="var(--border)" pannable zoomable ariaLabel="Diagram overview"/>}
     </ReactFlow>
 
@@ -414,10 +419,12 @@ function Editor() {
       <IconButton label="Select (V)" aria-pressed={mode === 'select'} variant={mode === 'select' ? 'secondary' : 'ghost'} onClick={() => setMode('select')}><MousePointer2/></IconButton>
       <IconButton label="Pan (H)" aria-pressed={mode === 'pan'} variant={mode === 'pan' ? 'secondary' : 'ghost'} onClick={() => setMode('pan')}><Hand/></IconButton><Separator orientation="vertical"/>
       <IconButton label="Undo" disabled={!history.past.length} onClick={undo}><Undo2/></IconButton><IconButton label="Redo" disabled={!history.future.length} onClick={redo}><Redo2/></IconButton><Separator orientation="vertical"/>
+      <IconButton label="Clear canvas" disabled={!nodes.length && !edges.length} onClick={() => { editCanvas(c => ({ ...c, nodes: [], edges: [] })); setActivePort(null); notify('Canvas cleared · Undo to restore'); }}><Eraser/></IconButton>
       <IconButton label="Snap to grid" aria-pressed={ui.snap} variant={ui.snap ? 'secondary' : 'ghost'} onClick={() => setUI(u => ({ ...u, snap: !u.snap }))}><Grid3X3/></IconButton>
     </Card>
 
     <Card className="floating-island actions-island" role="toolbar" aria-label="Diagram actions">
+      <IconButton label="Projects" onClick={() => setProjectsOpen(true)}><FolderOpen/></IconButton>
       <IconButton label="Import JSON" onClick={() => fileRef.current?.click()}><Upload/></IconButton><IconButton label="Export diagram" onClick={() => setExportOpen(true)}><Download/></IconButton><IconButton label="JSON editor" onClick={openJson}><Braces/></IconButton><Separator orientation="vertical"/>
       <IconButton label="Appearance" aria-expanded={appearanceOpen} variant={appearanceOpen ? 'secondary' : 'ghost'} onClick={() => setAppearanceOpen(v => !v)}><Palette/></IconButton>
       <IconButton label={ui.inspector ? 'Collapse inspector' : 'Open inspector'} aria-expanded={ui.inspector} variant={ui.inspector && !appearanceOpen ? 'secondary' : 'ghost'} onClick={openInspector}><PanelRight/></IconButton>
@@ -444,6 +451,7 @@ function Editor() {
     <Card className="floating-island zoom-island"><IconButton label="Zoom out" onClick={() => void flow.zoomOut({ duration: 150 })}><Minus/></IconButton><span className="zoom-value">{Math.round(canvas.viewport.zoom * 100)}%</span><IconButton label="Zoom in" onClick={() => void flow.zoomIn({ duration: 150 })}><Plus/></IconButton><Separator orientation="vertical"/><IconButton label="Fit to view (1)" onClick={() => void flow.fitView({ padding: 0.35, maxZoom: 1, duration: 200 })}><Expand/></IconButton><IconButton label="Toggle minimap" aria-pressed={ui.minimap} onClick={() => setUI(u => ({ ...u, minimap: !u.minimap }))}><Map/></IconButton></Card>
     {projectRuntime.enabled && <Card className="floating-island execution-island" role="toolbar" aria-label="Project execution"><IconButton label={projectRuntime.live ? 'Pause project' : 'Enable live project'} aria-pressed={projectRuntime.live} onClick={() => projectRuntime.setLive(!projectRuntime.live)}>{projectRuntime.live ? <Pause/> : <Play/>}</IconButton><IconButton label="Run project once" disabled={projectRuntime.busy} onClick={projectRuntime.step}><Play/></IconButton><IconButton label="Step project" disabled={projectRuntime.busy} onClick={projectRuntime.step}><StepForward/></IconButton><IconButton label="Stop project" onClick={projectRuntime.stop}><Square/></IconButton><IconButton label="Reset project instances" onClick={projectRuntime.reset}><RotateCcw/></IconButton><span role="status">{projectRuntime.busy ? 'Running…' : projectRuntime.error ? 'Error' : `${projectRuntime.live ? 'Live' : 'Paused'} · step ${projectRuntime.result?.tick ?? 0}`}</span></Card>}
     {projectRuntime.error && <div className="project-runtime-error" role="alert">{projectRuntime.error}</div>}
+    {projectsOpen && <ProjectsDialog diagram={document} close={() => setProjectsOpen(false)} openProject={next => { snapshot(); goTo([]); replace(next); notify('Project opened'); }}/>}
     <input className="sr-only" tabIndex={-1} ref={fileRef} type="file" accept=".json,application/json" aria-label="Import diagram file" onChange={async event => {
       const file = event.target.files?.[0]; event.target.value = '';
       if (file) { let text = ''; try { text = await file.text(); parseDiagram(text); importJson(text); } catch (error) { setJsonError(error instanceof Error ? error.message : 'Could not read JSON file'); setJson(text); setJsonOpen(true); } }
@@ -453,6 +461,6 @@ function Editor() {
     <Dialog open={jsonOpen} onOpenChange={setJsonOpen}><DialogContent className="json-dialog"><DialogHeader><DialogTitle className="dialog-title"><Braces/>JSON editor</DialogTitle><DialogDescription>Edit the complete diagram, including nested canvases and theme. Apply to rebuild the workspace.</DialogDescription></DialogHeader><Textarea className="json-source" aria-label="Diagram JSON" value={json} onChange={e => setJson(e.target.value)} spellCheck={false}/>{jsonError && <p className="json-error" role="alert">{jsonError}</p>}<DialogFooter className="json-footer"><Button variant="outline" onClick={() => void navigator.clipboard.writeText(json).then(() => notify('JSON copied'), () => notify('Clipboard unavailable. Select and copy the JSON.'))}><Copy/>Copy</Button><div><Button variant="outline" onClick={() => setJsonOpen(false)}>Cancel</Button><Button onClick={() => importJson(json)}><Check/>Apply to canvas</Button></div></DialogFooter></DialogContent></Dialog>
     <Dialog open={helpOpen} onOpenChange={setHelpOpen}><DialogContent><DialogHeader><DialogTitle>Working with milver</DialogTitle><DialogDescription>Build diagrams, connect signals, and organize systems into nested canvases.</DialogDescription></DialogHeader><div className="shortcuts">{[['Select / pan', 'V / H'], ['Pan temporarily', 'Space + drag'], ['Zoom', 'Scroll / pinch'], ['Fit to view', '1'], ['Undo / redo', '⌘ Ctrl + Z / Shift + Z'], ['Copy / paste blocks', '⌘ Ctrl + C / V'], ['Duplicate', '⌘ Ctrl + D'], ['Delete selection', 'Delete'], ['Export JSON', '⌘ Ctrl + S'], ['Leave parent canvas', 'Esc']].map(([action, key]) => <div key={action}><span>{action}</span><kbd>{key}</kbd></div>)}</div><Separator/><p className="help-note">Select a block to resize or drag it. Double-click a JavaScript block to use its controls; click outside it to finish. Double-click a Parent block to enter its canvas. Add Input and Output blocks inside to define its external ports. A collection of reusable block and canvas recipes. Connected constants, gains, sums and JS modules provide live value previews; feedback and time-domain simulation are left to consuming projects.</p><a className="license-link" href={`${import.meta.env.BASE_URL}THIRD_PARTY_NOTICES.txt`} target="_blank" rel="noreferrer">Third-party license notices<ArrowUpRight/></a></DialogContent></Dialog>
     {toast && <div className="editor-toast" role="status"><Check/>{toast}</div>}
-  </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></ProjectContext.Provider></TooltipProvider>;
+  </main></BlockContext.Provider></FlowContext.Provider></PreviewContext.Provider></ProjectContext.Provider></RoughContext.Provider></TooltipProvider>;
 }
 export default function App() { return <ReactFlowProvider><Editor/></ReactFlowProvider>; }

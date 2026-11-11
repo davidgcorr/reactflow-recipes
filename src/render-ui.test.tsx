@@ -5,6 +5,7 @@ import { act } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as ui from './sandbox-ui';
 import { buildBlockModule } from './block-code';
+import { makeNode } from './model';
 import { makeJsNode } from './js-recipes';
 
 beforeAll(() => {
@@ -12,12 +13,12 @@ beforeAll(() => {
   vi.stubGlobal('ResizeObserver', class { observe() {} unobserve() {} disconnect() {} });
 });
 afterEach(() => { document.body.replaceChildren(); });
-async function mount(name: string) {
-  const node=makeJsNode(name,{x:0,y:0}),element=document.createElement('div');document.body.append(element);
+async function mount(name: string, fontSize?: number) {
+  const node=name==='Viewer'?makeNode('renderer',{x:0,y:0}):makeJsNode(name,{x:0,y:0});const element=document.createElement('div');document.body.append(element);
   const module=await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(buildBlockModule(node.data.module!,node.data.render!)).toString('base64')}`);
   const outputs: unknown[]=[],updates: Promise<unknown>[]=[];let current:any;
-  await act(async()=> { current=await module.default({element,state:{},inputs:{},modules:{math,tensorMath:math},value:node.data.value,ports:node.data.ports,ui,emit:(value:unknown)=>outputs.push(value),setValue:(value:string)=>updates.push(current.update({},value))}); });
-  return {element,outputs,settle:()=>Promise.all(updates),dispose:()=>act(async()=>current.destroy())};
+  await act(async()=> { current=await module.default({element,state:{},inputs:{},modules:{math,tensorMath:math},value:node.data.value,ports:node.data.ports,renderer:{...node.data.renderer,fontSize},ui,emit:(value:unknown)=>outputs.push(value),setValue:(value:string)=>updates.push(current.update({},value))}); });
+  return {element,outputs,update:(input:unknown)=>act(async()=>current.update({'in-0':input},node.data.value)),settle:()=>Promise.all(updates),dispose:()=>act(async()=>current.destroy())};
 }
 describe('React / shadcn source rendering in a real DOM',()=>{
   it('renders the shared Button component and persists click output through Code',async()=>{
@@ -60,14 +61,29 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ValueRenderer } from './components/value-renderer';
 import { PreviewContext } from './components/module-mask';
-it('uses the single math/value viewer for nested outputs and earlier runtime previews',async()=>{
-  const element=document.createElement('div');document.body.append(element);const root=createRoot(element);
+it('renders both nested outputs and earlier runtime previews through the editable viewer function',async()=>{
+  const run=await mount('Viewer',32);
   for(const value of [math.matmul([[1,2],[3,4]],[[5],[6]]),{$ref:'matrix',type:'Matrix',shape:[2,1],rows:[[17],[39]],slices:1,slice:0}]){
-    await act(async()=>root.render(createElement(PreviewContext.Provider,{value:{values:{viewer:{inputs:{'in-0':value as any},outputs:{}}},emit(){},setValue(){},saveState(){},setProperty(){},report(){}}},createElement(ValueRenderer,{id:'viewer',settings:{precision:4,slice:0,fontSize:32}}))));
-    expect(element.querySelector('.value-formula math')).not.toBeNull();
-    expect(element.textContent).toContain('17');expect(element.textContent).toContain('39');
-    expect((element.querySelector('.value-formula') as HTMLElement).style.fontSize).toBe('32px');
-    expect(element.querySelector('.value-table-scroll')).toBeNull();
+    await run.update(value);
+    expect(run.element.querySelector('math')).not.toBeNull();
+    expect(run.element.textContent).toContain('17');expect(run.element.textContent).toContain('39');
+    expect((run.element.querySelector('.math-content') as HTMLElement).style.fontSize).toBe('32px');
+    expect(run.element.querySelector('.value-table-scroll')).toBeNull();
   }
-  await act(async()=>root.unmount());
+  await run.dispose();
+});
+it('renders infinity and applies an edited viewer function',async()=>{
+  const run=await mount('Viewer',30);
+  await run.update([[2,-Infinity,0],[0,2,0],[0,0,1]]);
+  expect(run.element.querySelector('math')).not.toBeNull();
+  expect(run.element.textContent).toContain('∞');
+  expect(run.element.textContent).not.toContain('null');
+  await run.dispose();
+  const node=makeNode('renderer',{x:0,y:0});
+  node.data.render=`async function render(){ element.textContent = 'Custom: ' + state.result[0][0]; element.style.color = 'red'; }`;
+  const module=await import(/* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(buildBlockModule(node.data.module!,node.data.render)).toString('base64')}`);
+  const element=document.createElement('div');document.body.append(element);
+  const current=await module.default({element,state:{},inputs:{'in-0':[[42]]},ui});
+  expect(element.textContent).toBe('Custom: 42');expect(element.style.color).toBe('red');
+  await current.destroy();
 });

@@ -17,7 +17,7 @@ export function ProjectModules() {
   const [alias, setAlias] = useState('helper'), [url, setUrl] = useState(''), [error, setError] = useState('');
   const attempt = (action: () => void) => { try { action(); setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } };
   return <section className="project-libraries">
-    <div className="library-intro"><h3>Project libraries</h3><p>Import once. Use in any JavaScript block’s code or render function through <code>modules.alias</code>.</p></div>
+    <div className="library-intro"><h3>JavaScript Libraries</h3><p>Import once. Use in any JavaScript block’s code or render function through <code>modules.alias</code>.</p></div>
     <div className="library-import-form"><Field label="Library alias"><Input aria-label="Library alias" value={alias} onChange={e => setAlias(e.target.value)}/></Field>
     <Field label="ES module URL"><Input aria-label="Library URL" placeholder="https://esm.sh/package@version" value={url} onChange={e => setUrl(e.target.value)}/></Field>
     <div className="module-toolbar"><Button size="sm" onClick={() => attempt(() => { if (!url.trim()) throw new Error('Enter an ES module URL.'); if (!validVariable(alias)) throw new Error('Enter a JavaScript alias.'); createModule('', alias, url); setUrl(''); })}><Plus/>Add URL</Button><Button variant="outline" size="sm" onClick={() => file.current?.click()}><FileUp/>Import JS</Button><Button variant="ghost" size="sm" onClick={() => attempt(() => createModule('export const example = 42;', alias))}>New</Button></div>

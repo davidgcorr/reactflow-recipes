@@ -30,6 +30,7 @@
     "radix-ui": "^1.8.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "roughjs": "^4.6.6",
     "sucrase": "^3.35.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.5",

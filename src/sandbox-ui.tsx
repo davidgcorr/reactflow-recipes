@@ -1,3 +1,4 @@
+export { describeValue, formatValue } from './value-renderer';
 import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import katex from 'katex';
