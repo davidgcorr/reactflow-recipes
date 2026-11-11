@@ -33,11 +33,11 @@ Open `http://localhost:4173/reactflow-recipes/`.
 ## Workspace
 
 - The project title can be edited beside the milver wordmark at the top left.
-- The top-left button opens/closes the floating block library. Collapsible Generators & datatypes, JavaScript code blocks, and Python code blocks categories show compact icon tiles. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Each panel also has its own close button.
+- The top-left button opens/closes the floating block library. The **Blocks** tab starts with Sources, followed by Operators & functions, JavaScript, Sinks, Structure and Python. Tiles preview input and output ports. **My Blocks** stores reusable JavaScript blocks and includes examples. The **Libraries** tab manages project-wide JavaScript packages without creating canvas blocks. Python blocks store editable source for a consuming runtime; Python does not execute in this editor. Selecting a block or wire opens the inspector; deselecting minimizes it. The top-right panel button also opens/closes it. Drag the left edge of the right panel to resize it; the width is saved locally. Keyboard users can focus its separator and use the arrow keys.
 - Canvas tools float at the bottom; the canvas hierarchy shows a home icon at the top and parent block names inside nested canvases. Import, export, and JSON editor use icon buttons with accessible labels and tooltips.
 - Drag a block from the library to place it. Clicking a library item adds a block near the viewport center.
-- Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Properties** (names, values, descriptions, ports), **Visuals** (fill, ink, dimensions, radius, visibility), and **Code** (JavaScript/Python source, port mappings, module imports) tabs.
-- Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed with its chevron and restored using the chevron on hover or **Visuals → Type breadcrumb**.
+- Drag blocks to move them; moving a block hides the inspector. Select a block to reveal four corner resize handles. The inspector has **Properties** (names, values, descriptions, ports), **Render** (appearance and the render function), **Code** (logic, port mappings and runtime feedback), and **JSON** (editable block data) tabs.
+- Block labels sit outside the bottom border. A subtle, divided type breadcrumb (for example, `gens › constant`) can be collapsed with its chevron and restored using the chevron on hover or **Render → Type breadcrumb**.
 - Inputs and outputs can sit on the left, right, top, or bottom. Multiple ports on a side are evenly spaced. Hover over a port for one second, then drag the small grip beside it to move it along any border; drag the circular port itself to connect wires. Focus a grip and use arrow keys for fine adjustment. Ports magnetize to the center and evenly spaced positions on their destination border. Port names appear only while hovering over that port. Custom positions, including parent interfaces, are saved in JSON and used in exports. Move a port and its connections follow it.
 - Ports use concentric circles: outputs have a filled core, inputs have hollow blue rings. Drag an output to an input to connect them. Outputs can fan out; each input accepts one connection. Connections between different blocks can form feedback loops.
 - Scroll or pinch to zoom. Hold Space and drag, use the middle/right mouse button, or choose the hand tool to pan. Drag the background in selection mode to select multiple blocks.
@@ -64,7 +64,7 @@ The official shadcn CLI generated the components in `src/components/ui/`. Radix 
 
 ## JSON ↔ UI
 
-`src/model.ts` defines the versioned schema, templates, validation, serialization, and immutable canvas updates. A diagram contains `version: 1`, `name`, `nodes`, `edges`, `viewport`, and optional `theme`.
+`src/model.ts` defines the versioned schema, templates, validation, serialization, and immutable canvas updates. A diagram contains `version: 1`, `name`, `nodes`, `edges`, `viewport`, and optional `theme` and `modules`.
 
 Each block has `id`, `type: "block"`, `position`, `width`, `height`, and `data` with its label, kind, description, display value, legacy color, and ports. A port has `id`, `name`, `type: "input" | "output"`, and `side: "left" | "right" | "top" | "bottom"`. Edges refer to node IDs and port IDs through `source`, `sourceHandle`, `target`, and `targetHandle`.
 
@@ -138,82 +138,79 @@ The editor uses the official `@xyflow/react` package from [xyflow/xyflow](https:
 
 This is a diagram editor, not a numerical simulation engine. Constants, gains, sums, and JavaScript recipes provide live value previews. Integrators and other simulation placeholders do not simulate a numerical system.
 
-## Shared project modules and computation blocks
+## Project libraries
 
-Open **Project modules → New** to create a shared module, or **Import JS** to upload one or more `.js`/`.mjs` files. The Import module block's Properties lets you edit its alias and source or switch to an absolute ES module URL. Functions, classes, methods, and constants appear in the project module catalog after loading. Click an export to create its visual block. A module's exports are shared across the root canvas and every nested canvas.
+Open **Libraries** in the left panel to add an ES module URL, upload `.js`/`.mjs` files, or create an embedded module. Expand an imported library to edit its alias, URL or source; use its trash button to remove it. These edits support undo/redo. Importing a library never creates a block or any connections.
 
-For a working example, select **Open shared modules example** in the library, or import [`examples/shared-modules.json`](examples/shared-modules.json). It demonstrates matrix multiplication (17, 39), code using the same shared library (42), and an accumulator passed by reference through a nested canvas. **Step** advances it from 10 to 15, then 20, then 25. Opening the example is undoable.
+Libraries are exposed to every mounted JavaScript block, including its render function, as `modules.alias`. For example, a library saved as `helper` with `export const double = x => x * 2` is available as `modules.helper.double(x)`. Embedded libraries can import each other by project alias. The block’s code can also use `await import('math')`. Remote libraries must be browser-compatible ESM with CORS support. Uploaded source is embedded in JSON; remote URLs require network access.
 
-The project execution toolbar provides Live/Pause, Run once, Step, Stop, and Reset. Run once and Step each evaluate one graph tick, including eligible stateful operations. Live recomputes changed pure values; it does not repeat untriggered state mutations. Methods default to execution on Run/Step or trigger. Connect `done` → `trigger` to order operations; chain the `same object` output to pass the same instance. Independent ready blocks execute in stable ID order, so use explicit connections when ordering matters. Constructor blocks retain their instance until constructor arguments change or the project runtime resets.
+## JavaScript logic and rendering
 
-Argument ports are configurable in **Properties → Argument variables**. The Parameter field accepts a JSON array of defaults for unconnected arguments. Functions use positional arguments; constructors use the same mapping. Method/property blocks require an object connection. Property names are editable. The catalog discovers export names and methods; APIs with default/rest/destructured arguments may require explicit port configuration. An optional exported `milver` object can supply argument hints:
+**JavaScript → Module** creates a block with two editable function bodies. The lifecycle adapter is supplied by the editor.
 
-```js
-export function add(a, b) { return a + b; }
-export class Counter {
-  constructor(initial = 0) { this.value = initial; }
-  increment(amount) { this.value += amount; return this.value; }
-}
-export const PI = Math.PI;
-export const milver = {
-  add: { args: ['a', 'b'] },
-  Counter: { args: ['initial'], methods: { increment: { args: ['amount'] } } }
-};
-```
-
-**JS computation** blocks use the same registry and runtime as visual calls. They have a Code tab with input/output variable mappings and source import:
+**Code** controls inputs, state and outputs:
 
 ```js
-export async function run({ inputs, modules, state, parameters, tick }) {
-  state.calls = (state.calls ?? 0) + 1;
-  return { result: modules.math.add(inputs.a, inputs.b) };
-}
+state.result = modules.math.multiply(inputs.input1 ?? Number(value), 2);
+emit(state.result, 'output1');
+await render();
 ```
 
-Return an object keyed by output variables, or a value for a single output. `state` survives invocations until Reset. Select On Run/Step or trigger for code that mutates state; Pure code may be cached. Parameters are parsed JSON. Set **Module aliases used** to declare dependencies, or leave it empty to expose all project aliases. Normal source imports may also reference project aliases. Shared computation code runs without a DOM; existing DOM masks use their separate `mount` API.
-
-Modules are evaluated once per runtime generation. Uploaded files are embedded in JSON, and sibling relative imports (for example `./helpers.js`) resolve using their saved filenames. Remote ES modules and their relative imports need CORS. Literal dynamic imports work; expression-based dynamic imports and circular local module graphs currently report a loading error. Browser-compatible ESM is supported, rather than arbitrary Node.js packages. The loader fetches remote dependencies without credentials. Pin remote versions or embed source when reproducibility/offline use matters.
-
-Class instances, functions, typed arrays, and large tensors remain in the shared worker. Connections pass actual values/references inside that runtime, preserving prototypes and identity. The canvas receives bounded previews (at most 32 × 32 cells per tensor slice), metadata, timings, and errors. Ordinary JSON serialization does not save live instances, closures, tensors, or optimizer state; rebuilding a saved project reconstructs its runtime. Explicit model checkpoints/GPU backends are future work. Structural/code/module edits restart the runtime; layout, title, selection, and visual edits preserve its instances.
-
-The runtime worker is hosted by an opaque-origin sandboxed frame, outside the editor's DOM/storage context. Stop terminates the worker even if user code is stuck in a synchronous loop; a subsequent Run starts a fresh runtime. Project blocks share one trust boundary. Network access is available to module code, so this is not a network-denial sandbox. The current opaque worker is a CPU/Wasm execution baseline; access to secure-context APIs such as WebGPU requires further work. Existing standalone diagrams continue to open without project modules.
-
-Native datatype/source recipes can feed shared computations even inside hidden nested canvases. Edited/custom DOM masks still execute only while their canvas is mounted; use JS computation blocks for project-wide execution. Custom mask code can publish distinct equal-payload triggers through `emitEvent(value, port)`, while ordinary `emit` publishes value changes.
-
-`npm run dev` and `npm run build` generate the isolated worker bundle from `src/project/worker.ts`. Restart the dev command after editing worker source so its generated bundle is refreshed. Project imports, operations, aliases, argument mappings, source, and nested wiring all round-trip through diagram JSON and undo/redo; execution values and UI interaction state remain transient.
-
-## Programmable JS masks
-
-The library contains **JavaScript datatypes** (Number, Boolean, String, Vector, Matrix, Tensor), **JavaScript sources** (Clock, Trigger, Slider, Selector, Button), and **JavaScript code blocks** (DOM, LaTeX, Three.js, WebAssembly). Select a block and open **Code** to edit source, import a `.js`/`.mjs` file, map ports to named variables, or add module dependencies. Python uses the same source editor and stores code without executing it.
-
-Drag a code block by its header or mask to move it; click to select it. Click the pointer icon at the bottom right of a JavaScript block to operate a slider, selector, button, or custom mask; click its checkmark to return to dragging. The icon stays at 30% opacity until hovered or keyboard-focused. The small header chevron collapses the type breadcrumb. Snap guides appear while a port is magnetized to an alignment position.
+**Render** controls the block content:
 
 ```js
-export default function mount({ element, inputs, variables, value, emit, setValue, modules }) {
-  function update(inputs, value, variables) {
-    // Map an input to "signal" and an output to "result" in Code.
-    const signal = variables.signal ?? Number(value);
-    element.textContent = `Value: ${signal}`;
-    emit(Number(signal) * 2, 'result');
-  }
-  update(inputs, value, variables);
-  return { update, destroy() { /* dispose graphics/listeners here */ } };
-}
+element.textContent = String(state.result);
+element.style.font = '24px system-ui';
 ```
 
-`inputs` includes original port IDs and their variable aliases; `variables` contains named inputs. `emit(value, outputIdOrVariable)` publishes an output, defaulting to the first output port. Modules may emit bounded JSON values: finite numbers, strings, booleans, null, arrays, and objects (including `{shape: [2,2], data: [1,2,3,4]}` tensors). Cycles, functions, nonfinite numbers, and oversized signals are rejected. The Properties tab shows live inputs and outputs.
+Both functions can access `inputs`, `variables`, `state`, `value`, `modules`, and `setProperty`. `inputs` contains port IDs and named aliases; expand **Port variables** in Code to change the mappings. `emit(value, outputIdOrVariable)` defaults to the first output. `emitEvent(value, port)` publishes a distinct event even when its payload is unchanged. Outputs and state accept bounded JSON values, including numeric arrays and shaped tensors; functions, cycles, nonfinite numbers and oversized values are rejected.
 
-`setValue(string)` updates the block's saved parameter. Slider positions, selector choices, and button click counts use it, so they survive reload, JSON export/import, and undo/redo. Clock periods are milliseconds (minimum 16 ms); clocks emit successive tick counts and dispose their timers when removed. Trigger counts false-to-true input transitions. Clock ticks and other emitted signal values are transient; they are not stored as execution state.
+The Code and Render editors use CodeMirror with JavaScript/JSX highlighting, indentation, search, code folding, and editor undo/redo. Expand an editor for more space; open **Block help & snippets** for the current block’s variables and insertable examples.
 
-A module can return a cleanup function or `{ update(inputs, value, variables), destroy() }`. Without `update`, changes dispose and remount the mask. The opaque-origin iframe uses `sandbox="allow-scripts"` and cannot access the editor DOM or local storage. Hiding mask content keeps its runtime mounted. Standalone mask previews operate in the current canvas. Shared computation projects execute nested interfaces through the project runtime; uncontrolled feedback cycles report an error.
+`state` is shared between logic and rendering and persisted as `data.state`, including nested edits. Code and render source are stored as `data.module` and `data.render`. Runtime inputs, outputs and errors appear in Code. Block JSON updates the UI after validation; UI changes update the same JSON. The project JSON editor also exposes library definitions, geometry, nested canvases and connections.
 
-**Module imports:** use normal absolute URL `import` statements in code, or add an ES module URL / upload module source under **Code → Modules**. Visual dependencies are exposed both through browser [import maps](https://developer.mozilla.org/en-US/docs/Web/HTML/Reference/Elements/script/type/importmap) (for example, `import { fn } from 'helper'`) and `modules.helper`. Use bare specifiers when embedded modules import each other. Uploaded source is embedded in diagram JSON and works offline; remote URLs need network access and CORS. The DOM recipe works offline. Three.js requires WebGL; the [KaTeX](https://katex.org/docs/api) and [Three.js](https://threejs.org/manual/pages/creating-a-scene.html) recipes fetch their libraries remotely.
+Use `setProperty('label', 'Result')`, `setProperty('width', 280)` or `setProperty('visuals.background', '#ffffff')` to change the block itself. Supported fields are label, description, value, width, height and every appearance setting. The editor validates changes and records ownership in `data.controlledProperties`. Matching UI controls and resize handles lock automatically. Remove the code assignment and release the field in Render to resume UI editing. Ownership survives JSON export/import.
 
-**WebAssembly:** the block starts with a working two-input integer `add` module. Import a `.wasm` file in Code and choose its exported function. Binary bytes, filename, wrapper source, port mappings, and exported function are saved in JSON. The default wrapper uses [WebAssembly.instantiate](https://developer.mozilla.org/en-US/docs/WebAssembly/Reference/JavaScript_interface/instantiate_static) and calls a numeric function with inputs in port order. Edit the wrapper for memory-based APIs, host imports, WASI, or non-numeric interfaces; there is no automatic WASI environment.
+Render also supports JSX using bundled React and the same shadcn/Radix components as the editor. No external package import is needed:
 
-**Value renderer:** connect a number, vector, matrix, nested numeric array, or shaped tensor. Scalars display as numbers, vectors and matrices as tables, and tensors as 2D slices. In Properties, choose decimal precision and a zero-based slice index. Large tables show up to 32 rows and 32 columns per slice. Display settings are saved; live input values remain transient.
+```jsx
+// state.config contains { label, count }; clicks save a new parameter and rerun Code.
+return <Button variant="outline" onClick={() =>
+  setValue(JSON.stringify({ ...state.config, count: (state.config.count ?? 0) + 1 }))
+}>
+  {state.config.label} · {state.config.count ?? 0}
+</Button>;
+```
 
-Import [`examples/javascript-workbench.json`](examples/javascript-workbench.json) for connected matrix, slider, clock, and WebAssembly examples. The Wasm example adds 6 and 7 and displays 13. Publication exports retain static block labels; executable code, dependencies, binary modules, mappings, and renderer settings are retained in JSON.
+`Slider`, `Select`, `SelectTrigger`, `SelectValue`, `SelectContent`, `SelectItem` and `React` are also in scope. The default Slider, Selector and Button sources use these components. Numeric sources call `latex(element, tex)` using bundled KaTeX and accessible MathML, so numbers, vectors, matrices and tensor slices work offline. Stock render functions document their state fields, precision, slice selection and styling points.
+
+Return a cleanup function from Render to dispose graphics, observers or event listeners before the next render or unmount. Use `onCleanup(fn)` in Code for logic resources such as timers. Render can retain DOM elements between calls; use `element.replaceChildren()` when a complete redraw is appropriate.
+
+**Sources** includes Number, Boolean, String, Vector, Matrix, Tensor, Clock, Trigger, Slider, Selector and Button. Their logic and render bodies use the same API. `setValue(string)` saves a source parameter; source controls use it for slider positions, selector choices and button counts. Clock periods are milliseconds (minimum 16 ms). Trigger counts rising input edges.
+
+**My Blocks → Examples** contains Three.js and LaTeX examples with graphics in Render. Three.js registers its required package in Libraries; LaTeX uses the bundled renderer. The Three.js example needs WebGL. **WebAssembly** starts with a working two-input integer add binary. Import another `.wasm` file in Code and choose the exported function. The binary, wrapper logic and rendering all round-trip through JSON.
+
+JavaScript blocks run in opaque-origin iframes with `sandbox="allow-scripts"`. They cannot access the editor DOM or its local storage. Library namespaces are shared within a block’s logic and rendering, while each iframe has its own library instances. Custom JavaScript runs while its canvas is mounted; hiding mask content leaves the runtime mounted. Publication exports show static labels; JSON preserves executable code and configuration.
+
+**Value renderer** accepts scalars, vectors, matrices and tensors. Choose precision and slice in Properties. Python blocks save code for a consuming runtime and do not execute in this editor.
+
+## Reusable blocks, operators and sinks
+
+Use **Save to My Blocks** in a JavaScript block’s inspector to capture its name, dimensions, parameter, ports, saved state, logic, rendering and project libraries. Insert a saved block to create an independent instance with a fresh ID. Deleting a saved definition leaves placed instances intact. Definitions live in `diagram.myBlocks` and travel with JSON and project undo/redo. Aliases with conflicting library definitions are reported before insertion.
+
+**Operators & functions** includes matrix multiplication, addition/residuals, elementwise multiplication/scaling, dot/cross products, transpose, reshape, tensor contraction, softmax, GELU, layer normalization, linear projection and scaled dot-product attention. Adding an operator imports the editable `math` ES module if needed. Its code calls `modules.math`; unconnected ports use the example defaults in Parameter. Numeric kernels support rectangular arrays and `{shape, data}` tensors, trailing-dimension broadcasting, stable softmax and optional causal attention. These small CPU kernels are intended for inspectable forward models.
+
+Open **My Blocks → Open transformer forward model**, or import [`examples/transformer-forward.json`](examples/transformer-forward.json), for a complete small single-head forward pass: token embeddings → Q/K/V projections → attention → residual/normalization → feed-forward/GELU → residual/normalization → mathematical output. Weights and biases are visible in the projection parameters. `node scripts/create-transformer-example.mjs` regenerates it from the stock blocks.
+
+**Sinks** includes a LaTeX math viewer, a table/value renderer, a line graph and a scatter plot. The line graph accepts a numeric vector or retains the last 128 scalar values. The scatter plot accepts `[[x,y], ...]` pairs and displays up to 256 points. Graph state and editable SVG/JSX rendering round-trip through JSON.
+
+## Existing project compatibility
+
+Saved version-1 diagrams continue to load. Existing JavaScript blocks without `data.render` retain their `export default function mount(...)` lifecycle and embedded dependencies. Their Code tab identifies this API. New blocks use the separate logic/render model above.
+
+Older Import module, function, constructor, method, property and JS computation nodes remain supported when loaded from JSON; they are no longer generated from library imports. [`examples/shared-modules.json`](examples/shared-modules.json) demonstrates this earlier shared worker API, including live class instances, nested interface routing, and Run/Step execution. Its computation code exports `run({ inputs, modules, state, parameters, tick })`. That worker state and live instances are transient; the new JavaScript block state is saved explicitly in `data.state`.
+
+`npm run dev` and `npm run build` generate the isolated worker bundle from `src/project/worker.ts`. Restart the dev command after editing worker source.
 
 ## Connection recipes
 

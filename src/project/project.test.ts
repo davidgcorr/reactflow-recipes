@@ -198,6 +198,7 @@ describe('project persistence contract', () => {
     expect(() => parseModules([definition, { ...definition, id: 'other' }])).toThrow('unique');
     const project = diagram([makeNode('compute', { x: 0, y: 0 })]); project.nodes[0].data.operation!.effect = 'bad' as never;
     expect(() => parseDiagram(serializeDiagram(project))).toThrow('operation');
-    expect(parseDiagram(serializeDiagram(exampleDiagram())).modules).toBeUndefined();
+    const legacy = exampleDiagram(); delete legacy.modules;
+    expect(parseDiagram(serializeDiagram(legacy)).modules).toBeUndefined();
   });
 });

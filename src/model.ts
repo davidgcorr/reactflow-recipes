@@ -1,3 +1,6 @@
+import { mathLibrary } from './default-libraries';
+import { defaultLogic, defaultRender, type ControlledPath } from './block-code';
+import type { Signal } from './runtime';
 import { parseModules, parseOperation, defaultComputeSource, type Operation, type ProjectModule } from './project/schema';
 import { parseCodeFields, validVariable, type ModuleDependency, type WasmConfig, type RendererConfig } from './code-config';
 import type { Edge, Node, Viewport } from '@xyflow/react';
@@ -12,6 +15,9 @@ export type BlockData = {
   label: string; kind: string; description: string; color: string; value: string; ports: Port[];
   visuals?: BlockVisuals;
   module?: string;
+  render?: string;
+  state?: Record<string, Signal>;
+  controlledProperties?: ControlledPath[];
   projectModuleId?: string;
   operation?: Operation;
   recipe?: string;
@@ -23,7 +29,8 @@ export type BlockData = {
   exposedOffset?: number;
 };
 export type BlockNode = Node<BlockData, 'block'>;
-export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings; modules?: ProjectModule[] };
+export type SavedBlock = { id: string; name: string; width: number; height: number; data: BlockData; modules?: ProjectModule[] };
+export type Diagram = Canvas & { version: 1; name: string; theme?: ThemeSettings; modules?: ProjectModule[]; myBlocks?: SavedBlock[] };
 export const defaultTheme: ThemeSettings = { mode: 'light', hue: 0, chroma: 0, radius: 10 };
 export const defaultViewport: Viewport = { x: 80, y: 160, zoom: 1 };
 export const colors = ['#171717', '#404040', '#525252', '#737373', '#a3a3a3', '#d4d4d4'];
@@ -65,7 +72,7 @@ export function makeNode(kind: string, position: { x: number; y: number }, id: s
     ...Array.from({ length: t.outputs }, (_, i): Port => ({ id: `out-${i}`, name: 'out', type: 'output', side: 'right' })),
   ];
   const node: BlockNode = { id, type: 'block', position, width: kind === 'subsystem' ? 200 : 164, height: kind === 'subsystem' ? 140 : 116, data: { label: t.label, kind: t.kind, description: t.description, color: '#171717', value: t.value, ports } };
-  if (kind === 'javascript') { node.width = 240; node.height = 190; node.data.module = defaultModule; }
+  if (kind === 'javascript') { node.width = 240; node.height = 190; node.data.module = defaultLogic; node.data.render = defaultRender; node.data.state = {}; node.data.ports[0].variable = 'input1'; node.data.ports[1].variable = 'output1'; }
   if (kind === 'compute') { node.width = 240; node.height = 150; node.data.module = defaultComputeSource; node.data.operation = { type: 'code', effect: 'pure' }; node.data.ports[0].variable = 'input1'; node.data.ports[1].id = 'result'; node.data.ports[1].variable = 'result'; }
   if (kind === 'module') { node.width = 220; node.height = 120; }
   if (kind === 'renderer') { node.width = 280; node.height = 210; node.data.renderer = { precision: 4, slice: 0 }; }
@@ -89,7 +96,7 @@ export function exampleDiagram(): Diagram {
   const nodes = [makeNode('constant', { x: 60, y: 180 }, 'source'), makeNode('gain', { x: 330, y: 180 }, 'gain'), makeNode('sum', { x: 600, y: 180 }, 'sum'), makeNode('scope', { x: 870, y: 180 }, 'scope'), makeNode('constant', { x: 330, y: 410 }, 'offset')];
   nodes[0].data.label = 'Input signal'; nodes[1].data.label = 'Amplifier'; nodes[2].data.label = 'Add offset'; nodes[3].data.label = 'Output'; nodes[4].data.label = 'Offset'; nodes[4].data.value = '0.5';
   const edge = (id: string, source: string, target: string, targetHandle = 'in-0'): Edge => ({ id, source, target, sourceHandle: 'out-0', targetHandle, type: 'smoothstep' });
-  return { version: 1, name: 'Signal processing', nodes, edges: [edge('e1', 'source', 'gain'), edge('e2', 'gain', 'sum'), edge('e3', 'sum', 'scope'), edge('e4', 'offset', 'sum', 'in-1')], viewport: { x: 20, y: 80, zoom: 0.85 } };
+  return { version: 1, name: 'Signal processing', modules: [mathLibrary], nodes, edges: [edge('e1', 'source', 'gain'), edge('e2', 'gain', 'sum'), edge('e3', 'sum', 'scope'), edge('e4', 'offset', 'sum', 'in-1')], viewport: { x: 20, y: 80, zoom: 0.85 } };
 }
 // Remove dangling wires whenever an interface or block is removed.
 export function cleanEdges(canvas: Canvas): Canvas {
@@ -117,7 +124,7 @@ export function updateCanvas<T extends Canvas>(root: T, path: string[], transfor
 function serializeCanvas(canvas: Canvas): Canvas {
   return { viewport: canvas.viewport, nodes: canvas.nodes.map(({ id, type, position, width, height, data }) => ({ id, type, position, width: width ?? 164, height: height ?? 116, data: { ...data, ...(data.canvas ? { canvas: serializeCanvas(data.canvas) } : {}) } })), edges: canvas.edges.map(({ id, source, target, sourceHandle, targetHandle, type, data }) => ({ id, source, target, sourceHandle, targetHandle, type: type ?? 'smoothstep', ...(data ? { data } : {}) })) };
 }
-export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...(diagram.modules ? { modules: diagram.modules } : {}), ...serializeCanvas(diagram) }, null, 2); }
+export function serializeDiagram(diagram: Diagram): string { return JSON.stringify({ version: 1, name: diagram.name, ...(diagram.theme ? { theme: diagram.theme } : {}), ...(diagram.modules ? { modules: diagram.modules } : {}), ...(diagram.myBlocks ? { myBlocks: diagram.myBlocks } : {}), ...serializeCanvas(diagram) }, null, 2); }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 const isSide = (v: unknown): v is Side => ['left', 'right', 'top', 'bottom'].includes(String(v));
@@ -187,7 +194,18 @@ export function parseDiagram(json: string): Diagram {
     if (!record(t) || (t.mode !== 'light' && t.mode !== 'dark') || !finite(t.hue) || t.hue < 0 || t.hue > 360 || !finite(t.chroma) || t.chroma < 0 || t.chroma > 0.22 || !finite(t.radius) || t.radius < 0 || t.radius > 20) throw new Error('Invalid theme: expected mode, hue 0–360, chroma 0–0.22, radius 0–20.');
     theme = { mode: t.mode, hue: t.hue, chroma: t.chroma, radius: t.radius };
   }
-  return { version: 1, name: d.name, ...(theme ? { theme } : {}), ...(d.modules !== undefined ? { modules: parseModules(d.modules) } : {}), ...parseCanvas(d, 0) };
+  let myBlocks: SavedBlock[] | undefined;
+  if (d.myBlocks !== undefined) {
+    if (!Array.isArray(d.myBlocks) || d.myBlocks.length > 128) throw new Error('Expected up to 128 saved blocks.');
+    const savedIds = new Set<string>();
+    myBlocks = d.myBlocks.map(b => {
+      if (!record(b) || typeof b.id !== 'string' || !b.id || savedIds.has(b.id) || typeof b.name !== 'string' || !b.name.trim() || b.name.length > 128 || !record(b.data) || b.data.kind !== 'javascript' || b.data.canvas) throw new Error('Invalid saved JavaScript block.');
+      savedIds.add(b.id);
+      const parsed = parseCanvas({ nodes: [{ id: b.id, type: 'block', position: { x: 0, y: 0 }, width: b.width, height: b.height, data: b.data }], edges: [], viewport: { x: 0, y: 0, zoom: 1 } }, 1).nodes[0];
+      return { id: b.id, name: b.name, width: parsed.width!, height: parsed.height!, data: parsed.data, ...(b.modules !== undefined ? { modules: parseModules(b.modules) } : {}) };
+    });
+  }
+  return { version: 1, name: d.name, ...(myBlocks ? { myBlocks } : {}), ...(theme ? { theme } : {}), ...(d.modules !== undefined ? { modules: parseModules(d.modules) } : {}), ...parseCanvas(d, 0) };
 }
 
 export function parseFlowSettings(value: unknown): FlowSettings {

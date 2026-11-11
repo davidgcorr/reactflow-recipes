@@ -1,3 +1,5 @@
+import { controlledPaths, type ControlledPath } from './block-code';
+import { isSignal, type Signal } from './runtime';
 import type { Port } from './model';
 export type ModuleDependency = { specifier: string; url?: string; source?: string };
 export type WasmConfig = { filename: string; base64: string; exportName: string };
@@ -6,7 +8,10 @@ export const validVariable = (name: string) => /^[A-Za-z_$][\w$]{0,63}$/.test(na
 export const validSpecifier = (name: string) => /^[A-Za-z@][\w@/.-]{0,127}$/.test(name) && !['__proto__', 'constructor', 'prototype'].includes(name);
 export const validModuleUrl = (url: string) => { try { return ['https:', 'http:'].includes(new URL(url).protocol); } catch { return false; } };
 export function parseCodeFields(data: Record<string, unknown>, ports: Port[]) {
-  const result: { dependencies?: ModuleDependency[]; wasm?: WasmConfig; recipe?: string; renderer?: RendererConfig } = {};
+  const result: { dependencies?: ModuleDependency[]; wasm?: WasmConfig; recipe?: string; renderer?: RendererConfig; render?: string; state?: Record<string, Signal>; controlledProperties?: ControlledPath[] } = {};
+  if (data.render !== undefined) { if (typeof data.render !== 'string' || data.render.length > 100000) throw new Error('Invalid render function.'); result.render = data.render; }
+  if (data.state !== undefined) { if (!data.state || Array.isArray(data.state) || typeof data.state !== 'object' || !isSignal(data.state)) throw new Error('State must be a bounded JSON object.'); result.state = data.state as Record<string, Signal>; }
+  if (data.controlledProperties !== undefined) { if (!Array.isArray(data.controlledProperties) || new Set(data.controlledProperties).size !== data.controlledProperties.length || data.controlledProperties.some(p => !controlledPaths.includes(p))) throw new Error('Invalid code-controlled property.'); result.controlledProperties = data.controlledProperties as ControlledPath[]; }
   for (const type of ['input', 'output']) {
     const names = ports.filter(p => p.type === type).map(p => p.variable).filter(v => v !== undefined);
     for (const port of ports.filter(p => p.type === type)) if (port.variable && ports.some(p => p.type === type && p.id !== port.id && p.id === port.variable)) throw new Error('Variable mapping conflicts with another port ID.');

@@ -1,3 +1,8 @@
+import forwardExample from '../examples/transformer-forward.json?raw';
+import { MyBlocks } from './components/my-blocks';
+import { ResizablePanel } from './components/resizable-panel';
+import { withMath } from './default-libraries';
+import { controlledPaths, type ControlledPath } from './block-code';
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import {
   ReactFlow, ReactFlowProvider, Background, BackgroundVariant, MiniMap, MarkerType, ConnectionLineType,
@@ -28,10 +33,9 @@ import { Inspector } from '@/components/inspector';
 import {
   canvasAt, cleanEdges, defaultTheme, exampleDiagram, interfacePorts,
   makeNode, parseDiagram, serializeDiagram, templates, updateCanvas,
-  type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
+  type SavedBlock, type BlockData, type BlockNode, type Canvas, type Diagram, type Port, type ThemeSettings, type FlowSettings,
 } from '@/model';
-import { applyJsRecipe, jsRecipes } from '@/js-recipes';
-import { sharedModulesExample } from '@/project/example';
+import { exampleLibraries, applyJsRecipe, jsRecipes } from '@/js-recipes';
 import { ProjectModules } from '@/components/project-modules';
 import { ProjectContext } from '@/project/context';
 import { useProjectRuntime } from '@/project/use-project-runtime';
@@ -61,12 +65,15 @@ function loadUI(): WorkspaceUI {
 }
 
 function Editor() {
+  const [maskErrors, setMaskErrors] = useState<Record<string, string>>({});
+  const reportMask = useCallback((id: string, error: string) => setMaskErrors(current => current[id] === error ? current : { ...current, [id]: error }), []);
   const [eventCounters, setEventCounters] = useState<Record<string, Record<string, number>>>({});
   const [emitted, setEmitted] = useState<Record<string, Signals>>({});
   const [initial] = useState(load);
   const [document, setDocument] = useState(initial.document);
   const [path, setPath] = useState<string[]>([]);
   const [ui, setUI] = useState(loadUI);
+  const [libraryTab, setLibraryTab] = useState<'blocks' | 'my-blocks' | 'libraries'>('blocks');
   const [appearanceOpen, setAppearanceOpen] = useState(false);
   const [mode, setMode] = useState<'select' | 'pan'>('select');
   const [activePort, setActivePort] = useState<string | null>(null);
@@ -99,7 +106,7 @@ function Editor() {
   }, []);
   const moduleVersions = useRef<Record<string, string>>({});
   const legacyVersions: Record<string, string> = {};
-  const collectVersions = (c: Canvas, parent: string[] = []) => { for (const n of c.nodes) { if (n.data.kind === 'javascript') legacyVersions[nodeKey(parent, n.id)] = JSON.stringify([n.data.module, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])]); if (n.data.canvas) collectVersions(n.data.canvas, [...parent, n.id]); } };
+  const collectVersions = (c: Canvas, parent: string[] = []) => { for (const n of c.nodes) { if (n.data.kind === 'javascript') legacyVersions[nodeKey(parent, n.id)] = JSON.stringify([document.modules, n.data.module, n.data.render, n.data.dependencies, n.data.wasm, n.data.ports.map(p => [p.id, p.type, p.variable])]); if (n.data.canvas) collectVersions(n.data.canvas, [...parent, n.id]); } };
   collectVersions(document);
   const runtimeKey = JSON.stringify(legacyVersions);
   useEffect(() => {
@@ -127,6 +134,23 @@ function Editor() {
     if (!current || current.data.kind !== 'javascript' || current.data.value === value) return;
     editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, value } } : n) }));
   }, [editCanvas]);
+  const saveBlockState = useCallback((id: string, state: Record<string, Signal>) => {
+    if (signalsEqual(canvasAt(documentRef.current, pathRef.current).nodes.find(n => n.id === id)?.data.state, state)) return;
+    editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id && !signalsEqual(n.data.state, state) ? { ...n, data: { ...n.data, state } } : n) }), false);
+  }, [editCanvas]);
+  const setCodeProperty = useCallback((id: string, property: string, value: Signal) => {
+    if (!controlledPaths.includes(property as ControlledPath)) return;
+    const root = documentRef.current;
+    const next = updateCanvas(root, pathRef.current, c => ({ ...c, nodes: c.nodes.map(n => {
+      if (n.id !== id) return n;
+      const controlledProperties = [...new Set([...(n.data.controlledProperties ?? []), property as ControlledPath])];
+      if (property === 'width' || property === 'height') return { ...n, [property]: value, data: { ...n.data, controlledProperties } } as BlockNode;
+      if (property.startsWith('visuals.')) return { ...n, data: { ...n.data, controlledProperties, visuals: { ...n.data.visuals, [property.slice(8)]: value } } } as BlockNode;
+      return { ...n, data: { ...n.data, controlledProperties, [property]: value } } as BlockNode;
+    }) }));
+    try { parseDiagram(serializeDiagram(next)); if (serializeDiagram(next) !== serializeDiagram(root)) replace(next); }
+    catch (e) { reportMask(id, e instanceof Error ? e.message : String(e)); }
+  }, [replace, reportMask]);
   const notify = useCallback((message: string) => setToast(message), []);
   useEffect(() => {
     if (!toast) return;
@@ -206,12 +230,35 @@ function Editor() {
       // Center a freshly created subsystem's internal graph without changing later saved views.
       node.data.canvas.viewport = { x: window.innerWidth / 2 - 362, y: window.innerHeight / 2 - 158, zoom: 1 };
     }
-    editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] }));
+    snapshot();
+    const library = exampleLibraries[recipe as keyof typeof exampleLibraries];
+    const root = documentRef.current;
+    const modules = recipe && jsRecipes[recipe]?.category === 'Operators' ? withMath(root.modules) : library && !root.modules?.some(m => m.alias === library.alias)
+      ? [...(root.modules ?? []), { id: crypto.randomUUID(), ...library }] : root.modules;
+    replace(updateCanvas({ ...root, ...(modules ? { modules } : {}) }, pathRef.current, c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] })));
   };
   const addProjectBlock = (node: BlockNode) => {
     const center = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     node.position = { x: center.x - (node.width ?? 164) / 2, y: center.y - (node.height ?? 116) / 2 };
     editCanvas(c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] }));
+  };
+  const saveBlock = (node: BlockNode) => {
+    const root = documentRef.current;
+    if ((root.myBlocks?.length ?? 0) >= 128) { notify('My Blocks is full (128 blocks).'); return; }
+    const saved: SavedBlock = { id: crypto.randomUUID(), name: (node.data.label || 'Untitled block').slice(0, 128), width: node.width ?? 240, height: node.height ?? 190, data: structuredClone(node.data), modules: structuredClone(root.modules ?? []) };
+    snapshot(); replace({ ...root, myBlocks: [...(root.myBlocks ?? []), saved] }); notify('Saved to My Blocks');
+  };
+  const insertSavedBlock = (saved: SavedBlock) => {
+    const root = documentRef.current, modules = [...(root.modules ?? [])];
+    for (const module of saved.modules ?? []) {
+      const existing = modules.find(m => m.alias === module.alias);
+      if (existing && JSON.stringify({ ...existing, id: '' }) !== JSON.stringify({ ...module, id: '' })) { notify(`Library alias ${module.alias} conflicts with the saved block. Rename it in Libraries first.`); return; }
+      if (!existing) modules.push({ ...module, id: modules.some(m => m.id === module.id) ? crypto.randomUUID() : module.id });
+    }
+    const point = flow.screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
+    const node: BlockNode = { id: crypto.randomUUID(), type: 'block', position: { x: point.x - saved.width / 2, y: point.y - saved.height / 2 }, width: saved.width, height: saved.height, data: structuredClone(saved.data), selected: true };
+    try { parseModules(modules); } catch (error) { notify(String(error)); return; }
+    snapshot(); replace(updateCanvas({ ...root, modules }, pathRef.current, c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), node] })));
   };
   const createProjectModule = (source = exampleModuleSource, filename = 'math', url?: string) => {
     const root = documentRef.current, modules = root.modules ?? [];
@@ -220,8 +267,7 @@ function Editor() {
     alias = alias.slice(0, 55); const base = alias; let index = 1; while (modules.some(m => m.alias === alias)) alias = `${base}_${index++}`;
     const module: ProjectModule = { id: crypto.randomUUID(), alias, ...(/\.m?js$/.test(filename) ? { filename } : {}), ...(url ? { url } : { source }) };
     parseModules([...modules, module]); snapshot();
-    const node = makeNode('module', flow.screenToFlowPosition({ x: window.innerWidth / 2 - 100, y: window.innerHeight / 2 - 60 })); node.data.projectModuleId = module.id; node.data.label = alias;
-    replace(updateCanvas({ ...root, modules: [...modules, module] }, pathRef.current, c => ({ ...c, nodes: [...c.nodes.map(n => ({ ...n, selected: false })), { ...node, selected: true }] })));
+    replace({ ...root, modules: [...modules, module] });
   };
   const updateProjectModule = (module: ProjectModule) => { const modules = (documentRef.current.modules ?? []).map(m => m.id === module.id ? module : m); parseModules(modules); snapshot(); replace({ ...documentRef.current, modules }); };
   const removeProjectModule = (id: string) => { snapshot(); replace({ ...documentRef.current, modules: documentRef.current.modules?.filter(m => m.id !== id) }); };
@@ -318,7 +364,7 @@ function Editor() {
     crumbs.push({ label: parent?.data.label ?? 'Parent block', path: path.slice(0, index + 1) });
   }
 
-  return <TooltipProvider delayDuration={250}><ProjectContext.Provider value={{ modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: () => { snapshot(); goTo([]); replace(sharedModulesExample()); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
+  return <TooltipProvider delayDuration={250}><ProjectContext.Provider value={{ myBlocks: document.myBlocks ?? [], saveBlock, insertSavedBlock, removeSavedBlock: id => { snapshot(); replace({ ...documentRef.current, myBlocks: documentRef.current.myBlocks?.filter(b => b.id !== id) }); }, modules: document.modules ?? [], catalog: projectRuntime.result?.catalog ?? [], values: projectValues, loadExample: () => { snapshot(); goTo([]); replace(parseDiagram(forwardExample)); }, createModule: createProjectModule, updateModule: updateProjectModule, removeModule: removeProjectModule, addBlock: addProjectBlock }}><PreviewContext.Provider value={{ values: preview, emit, setValue: setSourceValue, saveState: saveBlockState, setProperty: setCodeProperty, report: reportMask }}><FlowContext.Provider value={{ update: updateEdge, snapshot }}><BlockContext.Provider value={{ snapshot, enter, movePort, setHeader: (id, showHeader) => editCanvas(c => ({ ...c, nodes: c.nodes.map(n => n.id === id ? { ...n, data: { ...n.data, visuals: { ...n.data.visuals, showHeader } } } : n) })) }}><main className="milver-workspace" aria-label="milver block diagram editor">
     <ReactFlow<BlockNode>
       nodes={nodes} edges={edges.map(e => ({ ...e, type: 'recipe', data: { route: e.type === 'default' ? 'bezier' : 'smoothstep', ...e.data } }))} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
       onConnect={connect} isValidConnection={validConnection} onDrop={onDrop}
@@ -356,17 +402,20 @@ function Editor() {
     </Card>
 
     <Collapsible open={ui.library} className="left-panel-position" id="block-library"><CollapsibleContent><Card className="floating-panel library-panel" aria-label="Block library">
-      <div className="panel-scroll"><ProjectModules/>
+      <div className="panel-scroll"><div className="inspector-tabs library-tabs" role="tablist" aria-label="Library panel">{(['blocks', 'my-blocks', 'libraries'] as const).map(t => <Button variant="ghost" size="sm" key={t} id={`library-tab-${t}`} role="tab" aria-controls={`library-panel-${t}`} aria-selected={libraryTab === t} onClick={() => setLibraryTab(t)}>{t === 'blocks' ? 'Blocks' : t === 'my-blocks' ? 'My Blocks' : 'Libraries'}{t === 'libraries' && <span className="tab-count">{document.modules?.length ?? 0}</span>}</Button>)}</div>
+      <div role="tabpanel" id="library-panel-libraries" aria-labelledby="library-tab-libraries" hidden={libraryTab !== 'libraries'}><ProjectModules/></div>
+      <div role="tabpanel" id="library-panel-my-blocks" aria-labelledby="library-tab-my-blocks" hidden={libraryTab !== 'my-blocks'}><MyBlocks addExample={recipe => addBlock('javascript', undefined, recipe)}/></div>
+      <div role="tabpanel" id="library-panel-blocks" aria-labelledby="library-tab-blocks" hidden={libraryTab !== 'blocks'}>
         {nested && <div className="nested-library-note"><Network/><span>Input and Output blocks define<br/>this parent's external ports.</span></div>}
         {[
-          { title: 'Generators & datatypes', items: availableTemplates.filter(t => t.kind !== 'javascript' && t.kind !== 'python').map(t => ({ ...t, recipe: '' })) },
-          ...['JavaScript datatypes', 'JavaScript sources', 'JavaScript code blocks'].map(title => ({ title, items: Object.entries(jsRecipes).filter(([, t]) => t.category === title).map(([recipe, t]) => ({ ...templates.find(t => t.kind === 'javascript')!, label: t.label, symbol: t.symbol, description: `${t.label} · JavaScript`, recipe })) })),
+          ...['Sources', 'Operators & functions', 'JavaScript', 'Sinks'].map(title => ({ title, items: Object.entries(jsRecipes).filter(([name, t]) => title === 'Sources' ? ['JavaScript datatypes', 'JavaScript sources'].includes(t.category) : title === 'Operators & functions' ? t.category === 'Operators' : title === 'Sinks' ? t.category === 'Sinks' : ['DOM', 'WebAssembly'].includes(name)).map(([recipe, t]) => ({ ...templates.find(t => t.kind === 'javascript')!, label: t.label, symbol: t.symbol, inputs: t.inputs, outputs: t.outputs, description: `${t.label} · JavaScript`, recipe })).concat(availableTemplates.filter(t => title === 'Sources' ? t.kind === 'constant' : title === 'Operators & functions' ? ['gain', 'sum', 'integrator', 'custom'].includes(t.kind) : title === 'Sinks' ? ['renderer', 'scope'].includes(t.kind) : false).map(t => ({ ...t, recipe: '' }))) })),
+          { title: 'Structure', items: availableTemplates.filter(t => ['subsystem', 'inport', 'outport'].includes(t.kind)).map(t => ({ ...t, recipe: '' })) },
           { title: 'Python code blocks', items: availableTemplates.filter(t => t.kind === 'python').map(t => ({ ...t, recipe: '' })) },
-        ].map(category => <Collapsible key={category.title} defaultOpen className="library-category"><CollapsibleTrigger className="category-toggle"><ChevronDown/><span>{category.title}</span></CollapsibleTrigger><CollapsibleContent><div className="palette-grid">{category.items.map(t => <Button key={t.recipe || t.kind} variant="ghost" className="palette-tile" draggable onDragStart={e => { e.dataTransfer.setData('application/milver', t.kind); e.dataTransfer.setData('application/milver-recipe', t.recipe); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind, undefined, t.recipe)} title={t.description}><span className="palette-glyph">{t.kind === 'subsystem' ? <Network/> : t.symbol}</span><span>{t.label}</span></Button>)}</div>{!category.items.length && <p className="category-empty">No blocks yet</p>}</CollapsibleContent></Collapsible>)}
-      </div>
+        ].map(category => <Collapsible key={category.title} defaultOpen className="library-category"><CollapsibleTrigger asChild><Button variant="ghost" size="sm" className="category-toggle"><ChevronDown/><span>{category.title}</span></Button></CollapsibleTrigger><CollapsibleContent><div className="palette-grid">{category.items.map(t => <Button key={t.recipe || t.kind} variant="ghost" className="palette-tile" draggable onDragStart={e => { e.dataTransfer.setData('application/milver', t.kind); e.dataTransfer.setData('application/milver-recipe', t.recipe); e.dataTransfer.effectAllowed = 'copy'; }} onClick={() => addBlock(t.kind, undefined, t.recipe)} title={t.description}><span className={`palette-glyph ${t.outputs > 0 ? 'palette-source' : ''}`}>{t.kind === 'subsystem' ? <Network/> : t.symbol}{t.inputs > 0 && <i className="palette-input" aria-label="Accepts input"/>}{t.outputs > 0 && <i className="palette-output" aria-label="Produces output"/>}</span><span>{t.label}</span></Button>)}</div>{!category.items.length && <p className="category-empty">No blocks yet</p>}</CollapsibleContent></Collapsible>)}
+      </div></div>
     </Card></CollapsibleContent></Collapsible>
 
-    <div className="right-panel-position">{appearanceOpen ? <Appearance theme={theme} update={updateTheme} close={() => setAppearanceOpen(false)}/> : <Collapsible open={ui.inspector}><CollapsibleContent><Inspector node={selected} edge={selectedEdge} updateEdge={patch => selectedEdge && updateEdge(selectedEdge.id, patch)} nodes={nodes} activePort={activePort} setActivePort={setActivePort} update={updateBlock} resize={resize} updatePort={updatePort} removePort={removePort} addPort={addPort} enter={enter} duplicate={duplicate} remove={deleteSelection}/></CollapsibleContent></Collapsible>}</div>
+    <ResizablePanel>{appearanceOpen ? <Appearance theme={theme} update={updateTheme} close={() => setAppearanceOpen(false)}/> : <Collapsible open={ui.inspector}><CollapsibleContent><Inspector maskError={selected ? maskErrors[selected.id] : undefined} node={selected} edge={selectedEdge} updateEdge={patch => selectedEdge && updateEdge(selectedEdge.id, patch)} nodes={nodes} activePort={activePort} setActivePort={setActivePort} update={updateBlock} resize={resize} updatePort={updatePort} removePort={removePort} addPort={addPort} enter={enter} duplicate={duplicate} remove={deleteSelection}/></CollapsibleContent></Collapsible>}</ResizablePanel>
 
     <Card className="floating-island breadcrumbs" aria-label="Canvas hierarchy"><IconButton label="Root canvas" onClick={() => goTo([])}><Home/></IconButton>{crumbs.map((crumb, index) => <span key={crumb.path.join('/')} className="breadcrumb-item"><ChevronRight/><Button variant="ghost" size="sm" aria-current={index === crumbs.length - 1 ? 'page' : undefined} onClick={() => goTo(crumb.path)}>{crumb.label}</Button></span>)}</Card>
 

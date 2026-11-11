@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Position } from '@xyflow/react';
 import { connectionPath } from './connections';
-import { defaultModule, exampleDiagram, makeNode, parseDiagram, serializeDiagram } from './model';
+import { defaultLogic } from './block-code';
+import { exampleDiagram, makeNode, parseDiagram, serializeDiagram } from './model';
 import { previewSignals } from './runtime';
 import { buildScene, collectPages, defaultExportOptions } from './export/scene';
 
@@ -14,7 +15,7 @@ describe('reusable block recipes', () => {
     d.edges[0].data = { route: 'bezier', points: [{ x: 200, y: 50 }], animation: 'pulse', speed: 3.5, reverse: true, color: '#ff0000', width: 3 };
     const parsed = parseDiagram(serializeDiagram(d));
     expect(parsed).toEqual(d);
-    expect(parsed.nodes.at(-1)?.data.module).toBe(defaultModule);
+    expect(parsed.nodes.at(-1)?.data.module).toBe(defaultLogic);
   });
   it('rejects malformed persisted appearance and route values', () => {
     const d = exampleDiagram();

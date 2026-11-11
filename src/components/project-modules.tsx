@@ -1,7 +1,7 @@
+import { CodeEditor } from './code-editor';
 import { useContext, useEffect, useRef, useState } from 'react';
-import { ChevronDown, FileUp, Plus, Trash2 } from 'lucide-react';
+import { FileUp, Plus, Trash2 } from 'lucide-react';
 import { ProjectContext } from '@/project/context';
-import { makeOperationBlock } from '@/project/blocks';
 import { parseModules, parseOperation } from '@/project/schema';
 import { operationPorts } from '@/project/blocks';
 import { validVariable } from '@/code-config';
@@ -9,20 +9,34 @@ import type { BlockData, BlockNode } from '@/model';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible';
 import { Field, IconButton } from './editor-ui';
 
 export function ProjectModules() {
-  const { modules, catalog, createModule, loadExample, addBlock, removeModule } = useContext(ProjectContext);
-  const file = useRef<HTMLInputElement>(null); const [error, setError] = useState('');
-  return <Collapsible defaultOpen className="library-category project-modules"><CollapsibleTrigger className="category-toggle"><ChevronDown/><span>Project modules</span></CollapsibleTrigger><CollapsibleContent>
-    <div className="module-toolbar"><Button variant="outline" size="sm" onClick={() => createModule()}><Plus/>New</Button><Button variant="outline" size="sm" onClick={() => file.current?.click()}><FileUp/>Import JS</Button></div>
-    <Button variant="ghost" size="sm" className="load-project-example" onClick={loadExample}>Open shared modules example</Button>
-    <input hidden ref={file} type="file" accept=".js,.mjs" multiple onChange={async e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; try { for (const f of files) { if (f.size > 100000) throw new Error('Module exceeds 100 KB.'); createModule(await f.text(), f.name); } setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}/>
-    {!modules.length && <p className="category-empty">Import once, use across all canvases.</p>}
-    {modules.map(module => <details key={module.id} className="module-catalog" open><summary><code>{module.alias}</code><IconButton label={`Remove project module ${module.alias}`} size="icon-xs" onClick={e => { e.preventDefault(); removeModule(module.id); }}><Trash2/></IconButton></summary>{catalog.find(m => m.id === module.id)?.exports.map(entry => <div key={entry.name} className="module-export"><Button variant="ghost" size="sm" title={`Add ${entry.kind} block`} onClick={() => addBlock(makeOperationBlock(module, entry, { x: 0, y: 0 }))}><span className="export-kind">{entry.kind === 'class' ? 'new' : entry.kind === 'function' ? 'ƒ' : 'v'}</span><span>{entry.name}</span><Plus/></Button>{entry.kind === 'class' && <div className="module-methods">{entry.methods.map(method => <Button key={method.name} size="sm" variant="ghost" onClick={() => addBlock(makeOperationBlock(module, entry, { x: 0, y: 0 }, method))}>{method.name}()</Button>)}<Button size="sm" variant="ghost" onClick={() => addBlock(makeOperationBlock(module, entry, { x: 0, y: 0 }, undefined, 'value'))}>Read property…</Button></div>}</div>) ?? <p className="category-empty">Run the project to discover exports.</p>}</details>)}
+  const { modules, createModule, updateModule, removeModule } = useContext(ProjectContext);
+  const file = useRef<HTMLInputElement>(null);
+  const [alias, setAlias] = useState('helper'), [url, setUrl] = useState(''), [error, setError] = useState('');
+  const attempt = (action: () => void) => { try { action(); setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } };
+  return <section className="project-libraries">
+    <div className="library-intro"><h3>Project libraries</h3><p>Import once. Use in any JavaScript block’s code or render function through <code>modules.alias</code>.</p></div>
+    <div className="library-import-form"><Field label="Library alias"><Input aria-label="Library alias" value={alias} onChange={e => setAlias(e.target.value)}/></Field>
+    <Field label="ES module URL"><Input aria-label="Library URL" placeholder="https://esm.sh/package@version" value={url} onChange={e => setUrl(e.target.value)}/></Field>
+    <div className="module-toolbar"><Button size="sm" onClick={() => attempt(() => { if (!url.trim()) throw new Error('Enter an ES module URL.'); if (!validVariable(alias)) throw new Error('Enter a JavaScript alias.'); createModule('', alias, url); setUrl(''); })}><Plus/>Add URL</Button><Button variant="outline" size="sm" onClick={() => file.current?.click()}><FileUp/>Import JS</Button><Button variant="ghost" size="sm" onClick={() => attempt(() => createModule('export const example = 42;', alias))}>New</Button></div>
+    <input hidden ref={file} type="file" accept=".js,.mjs" multiple onChange={async e => { const files = Array.from(e.target.files ?? []); e.target.value = ''; try { for (const f of files) { if (f.size > 100000) throw new Error('Module exceeds 100 KB.'); createModule(await f.text(), f.name); } setError(''); } catch (e) { setError(e instanceof Error ? e.message : String(e)); } }}/></div>
+    <details className="builtin-library"><summary>Included render libraries</summary><p>React, shadcn Button / Slider / Select and KaTeX are bundled locally and available in Render. Use JSX or <code>latex(element, tex)</code>. No URL imports needed.</p></details>
+    <div className="library-list-heading"><span>Project scope</span><span>{modules.length} imported</span></div>
+    {!modules.length && <div className="library-empty">No libraries yet.<p>Add an ES module URL or upload JavaScript to get started.</p></div>}
+    {modules.map(module => <LibraryEditor key={module.id} module={module} save={next => attempt(() => updateModule(next))} remove={() => removeModule(module.id)}/>)}
     {error && <p className="code-error" role="alert">{error}</p>}
-  </CollapsibleContent></Collapsible>;
+  </section>;
+}
+function LibraryEditor({ module, save, remove }: { module: import('@/project/schema').ProjectModule; save: (module: import('@/project/schema').ProjectModule) => void; remove: () => void }) {
+  const [alias, setAlias] = useState(module.alias), [content, setContent] = useState(module.url ?? module.source ?? '');
+  useEffect(() => { setAlias(module.alias); setContent(module.url ?? module.source ?? ''); }, [module]);
+  return <details className="library-entry"><summary><span className="library-entry-icon">JS</span><span><strong>{module.alias}</strong><small>{module.url ? new URL(module.url).hostname : module.filename ?? 'Embedded module'}</small></span><IconButton label={`Remove library ${module.alias}`} size="icon-xs" onClick={e => { e.preventDefault(); remove(); }}><Trash2/></IconButton></summary><div className="library-entry-body">
+    <code>modules.{module.alias}</code><Field label="Alias"><Input aria-label={`Alias for ${module.alias}`} value={alias} onChange={e => setAlias(e.target.value)}/></Field>
+    <Field label={module.url ? 'Module URL' : 'Module source'}>{module.url ? <Input aria-label={`URL for ${module.alias}`} value={content} onChange={e => setContent(e.target.value)}/> : <CodeEditor label={`Source for ${module.alias}`} value={content} onChange={setContent}/>}</Field>
+    <Button size="sm" disabled={alias === module.alias && content === (module.url ?? module.source)} onClick={() => save({ ...module, alias, ...(module.url ? { url: content } : { source: content }) })}>Apply library</Button>
+  </div></details>;
 }
 export function ProjectModuleProperties({ node, update }: { node: BlockNode; update: (patch: Partial<BlockData>) => void }) {
   const { modules, updateModule } = useContext(ProjectContext);

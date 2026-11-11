@@ -1,3 +1,4 @@
+import { isControlled } from '@/block-code';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Field } from './editor-ui';
@@ -6,12 +7,13 @@ export function VisualProperties({ node, update, resize }: { node: BlockNode; up
   const v = node.data.visuals ?? {};
   const change = (patch: Partial<BlockVisuals>) => update({ visuals: { ...v, ...patch } });
   return <section className="property-section">
-    <h3>Block mask</h3>
-    <div className="dimension-fields"><Field label="Fill"><Input type="color" aria-label="Block fill" value={v.background ?? '#ffffff'} onChange={e => change({ background: e.target.value })}/></Field><Field label="Ink"><Input type="color" aria-label="Block ink" value={v.foreground ?? '#171717'} onChange={e => change({ foreground: e.target.value })}/></Field></div>
-    <Button variant="outline" size="sm" onClick={() => update({ visuals: { ...v, background: undefined, foreground: undefined } })}>Use theme colors</Button>
-    <div className="dimension-fields">{(['width', 'height'] as const).map(d => <Field key={d} label={d === 'width' ? 'Width (px)' : 'Height (px)'}><Input type="number" aria-label={`Block ${d}`} min={d === 'width' ? 120 : 90} max={2000} value={node[d] ?? (d === 'width' ? 164 : 116)} onChange={e => resize(d, Number(e.target.value))}/></Field>)}</div>
-    <Field label="Corner radius"><Input aria-label="Block corner radius" type="number" min={0} max={60} value={v.radius ?? 9} onChange={e => change({ radius: Math.max(0, Math.min(60, Number(e.target.value))) })}/></Field>
-    {([['showHeader', 'Type breadcrumb'], ['showLabel', 'Block label'], ['showValue', 'Mask content'], ['showPortLabels', 'Port names on hover']] as const).map(([key, label]) => <label className="visibility-option" key={key}><span>{label}</span><input type="checkbox" checked={v[key] !== false} onChange={e => change({ [key]: e.target.checked })}/></label>)}
+    <h3>Appearance</h3>
+    {!!node.data.controlledProperties?.length && <div className="controlled-properties"><p className="field-help">Locked by code. Remove its <code>setProperty()</code> call before releasing a field.</p>{node.data.controlledProperties.map(path => <div key={path}><code>{path}</code><Button size="sm" variant="ghost" onClick={() => update({ controlledProperties: node.data.controlledProperties!.filter(p => p !== path) })}>Release</Button></div>)}</div>}
+    <div className="dimension-fields"><Field label="Fill"><Input type="color" disabled={isControlled(node.data, 'visuals.background')} title={isControlled(node.data, 'visuals.background') ? 'Controlled by code' : undefined} aria-label="Block fill" value={v.background ?? '#ffffff'} onChange={e => change({ background: e.target.value })}/></Field><Field label="Ink"><Input type="color" disabled={isControlled(node.data, 'visuals.foreground')} title={isControlled(node.data, 'visuals.foreground') ? 'Controlled by code' : undefined} aria-label="Block ink" value={v.foreground ?? '#171717'} onChange={e => change({ foreground: e.target.value })}/></Field></div>
+    <Button variant="outline" size="sm" disabled={isControlled(node.data, 'visuals.background') || isControlled(node.data, 'visuals.foreground')} onClick={() => update({ visuals: { ...v, background: undefined, foreground: undefined } })}>Use theme colors</Button>
+    <div className="dimension-fields">{(['width', 'height'] as const).map(d => <Field key={d} label={d === 'width' ? 'Width (px)' : 'Height (px)'}><Input type="number" disabled={isControlled(node.data, d)} aria-label={`Block ${d}`} min={d === 'width' ? 120 : 90} max={2000} value={node[d] ?? (d === 'width' ? 164 : 116)} onChange={e => resize(d, Number(e.target.value))}/></Field>)}</div>
+    <Field label="Corner radius"><Input disabled={isControlled(node.data, 'visuals.radius')} title={isControlled(node.data, 'visuals.radius') ? 'Controlled by code' : undefined} aria-label="Block corner radius" type="number" min={0} max={60} value={v.radius ?? 9} onChange={e => change({ radius: Math.max(0, Math.min(60, Number(e.target.value))) })}/></Field>
+    {([['showHeader', 'Type breadcrumb'], ['showLabel', 'Block label'], ['showValue', 'Mask content'], ['showPortLabels', 'Port names on hover']] as const).map(([key, label]) => <label className="visibility-option" key={key}><span>{label}</span><input disabled={isControlled(node.data, `visuals.${key}`)} type="checkbox" checked={v[key] !== false} onChange={e => change({ [key]: e.target.checked })}/></label>)}
   </section>;
 }
 export function ConnectionProperties({ settings, update }: { settings: FlowSettings; update: (patch: FlowSettings) => void }) {

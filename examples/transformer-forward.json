@@ -1,0 +1,714 @@
+{
+  "version": 1,
+  "name": "Transformer forward · single attention head",
+  "modules": [
+    {
+      "id": "builtin-math",
+      "alias": "math",
+      "filename": "math.js",
+      "source": "// Small, dependency-free numeric kernels for editable forward-model blocks.\nconst numeric = x => { if (typeof x !== 'number' || !Number.isFinite(x)) throw new Error('Expected finite numeric data.'); return x; };\nexport function shape(x) {\n  if (typeof x === 'number') { numeric(x); return []; }\n  if (x && !Array.isArray(x) && Array.isArray(x.shape) && Array.isArray(x.data)) {\n    if (!x.shape.length || !x.shape.every(n => Number.isInteger(n) && n > 0) || x.shape.reduce((a,b) => a*b,1) !== x.data.length) throw new Error('Tensor shape does not match data.');\n    x.data.forEach(numeric); return [...x.shape];\n  }\n  if (!Array.isArray(x) || !x.length) throw new Error('Expected a nonempty numeric array.');\n  const child = shape(x[0]);\n  if (!x.every(row => JSON.stringify(shape(row)) === JSON.stringify(child))) throw new Error('Arrays must be rectangular.');\n  return [x.length, ...child];\n}\nconst flatten = x => Array.isArray(x) ? x.flatMap(flatten) : x && Array.isArray(x.data) ? x.data.map(numeric) : [numeric(x)];\nconst nest = (data, dims) => dims.length === 0 ? data[0] : Array.from({length:dims[0]},(_,i) => nest(data.slice(i*data.length/dims[0],(i+1)*data.length/dims[0]),dims.slice(1)));\nexport function reshape(x, dims) { shape(x); const data=flatten(x); if (!Array.isArray(dims) || !dims.length || !dims.every(n=>Number.isInteger(n)&&n>0) || dims.reduce((a,b)=>a*b,1)!==data.length) throw new Error('Reshape must preserve element count.'); return nest(data,dims); }\nconst matrix = x => { const dims=shape(x); if(dims.length!==2)throw new Error('Expected a matrix.'); return Array.isArray(x)?x:reshape(x,dims); };\nexport function transpose(x) { const a=matrix(x); return a[0].map((_,j)=>a.map(row=>row[j])); }\nexport function matmul(x,y) { const a=matrix(x), b=matrix(y); if(a[0].length!==b.length)throw new Error('Matrix inner dimensions must match.'); return a.map(row=>b[0].map((_,j)=>row.reduce((s,v,k)=>s+v*b[k][j],0))); }\nfunction elementwise(x,y,fn) {\n  const a=shape(x),b=shape(y),rank=Math.max(a.length,b.length);\n  const left=Array(rank-a.length).fill(1).concat(a),right=Array(rank-b.length).fill(1).concat(b);\n  const dims=left.map((n,i)=>{if(n!==right[i]&&n!==1&&right[i]!==1)throw new Error('Shapes must match or broadcast along dimensions of size one.');return Math.max(n,right[i]);});\n  const av=flatten(x),bv=flatten(y),size=dims.reduce((n,d)=>n*d,1);\n  const offset=(shape,coords)=>shape.reduce((index,n,i)=>index*n+(n===1?0:coords[i]),0);\n  const out=Array.from({length:size},(_,i)=>{let index=i;const coords=Array(rank);for(let d=rank-1;d>=0;d--){coords[d]=index%dims[d];index=Math.floor(index/dims[d]);}return fn(av[offset(left,coords)],bv[offset(right,coords)]);});\n  return dims.length?nest(out,dims):out[0];\n}\nexport function map(x,fn) { const dims=shape(x); const data=flatten(x).map(fn); return dims.length?nest(data,dims):data[0]; }\nexport const add=(a,b)=>elementwise(a,b,(x,y)=>x+y);\nexport const multiply=(a,b)=>elementwise(a,b,(x,y)=>x*y);\nexport function dot(a,b) { if(shape(a).length!==1||shape(b).length!==1||shape(a)[0]!==shape(b)[0])throw new Error('Dot product needs equal-length vectors.');const av=flatten(a),bv=flatten(b);return av.reduce((s,x,i)=>s+x*bv[i],0); }\nexport function cross(a,b) { if(shape(a).join()!=='3'||shape(b).join()!=='3')throw new Error('Cross product needs two 3D vectors.');a=flatten(a);b=flatten(b);return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]; }\nexport function softmax(x) { const dims=shape(x);if(dims.length>1)return (Array.isArray(x)?x:reshape(x,dims)).map(softmax);if(!dims.length)throw new Error('Softmax needs a vector or tensor.');x=flatten(x);const max=Math.max(...x), e=x.map(v=>Math.exp(v-max)),sum=e.reduce((a,b)=>a+b,0);return e.map(v=>v/sum); }\nexport const gelu=x=>map(x,v=>0.5*v*(1+Math.tanh(Math.sqrt(2/Math.PI)*(v+0.044715*v**3))));\nexport function layerNorm(x, epsilon=1e-5) { if(!Number.isFinite(epsilon)||epsilon<=0)throw new Error('epsilon must be positive.');const dims=shape(x);if(!dims.length)throw new Error('Layer normalization needs an array.');if(dims.length>1)return (Array.isArray(x)?x:reshape(x,dims)).map(row=>layerNorm(row,epsilon));x=flatten(x);const mean=x.reduce((a,b)=>a+b,0)/x.length,variance=x.reduce((a,b)=>a+(b-mean)**2,0)/x.length;return x.map(v=>(v-mean)/Math.sqrt(variance+epsilon)); }\nexport function attention(q,k,v,causal=false) { const Q=matrix(q),K=matrix(k),V=matrix(v);if(Q[0].length!==K[0].length||K.length!==V.length)throw new Error('Attention requires matching Q/K widths and K/V sequence lengths.');const scores=matmul(Q,transpose(K)).map((row,i)=>row.map((s,j)=>causal&&j>i?-1e9:s/Math.sqrt(Q[0].length)));return matmul(softmax(scores),V); }\nexport function tensorContract(a,b) { const sa=shape(a),sb=shape(b);if(!sa.length||!sb.length||sa.at(-1)!==sb[0])throw new Error('Last/first tensor dimensions must match.');const left=sa.slice(0,-1).reduce((a,b)=>a*b,1),right=sb.slice(1).reduce((a,b)=>a*b,1),inner=sb[0];const out=matmul(reshape(a,[left,inner]),reshape(b,[inner,right]));const dims=[...sa.slice(0,-1),...sb.slice(1)];return dims.length?reshape(out,dims):out[0][0]; }\n"
+    }
+  ],
+  "viewport": {
+    "x": 30,
+    "y": 120,
+    "zoom": 0.35
+  },
+  "nodes": [
+    {
+      "id": "tokens",
+      "type": "block",
+      "position": {
+        "x": 0,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Token embeddings · 2 × 2",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "[[1,0],[0,1]]",
+        "ports": [
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "const result = JSON.parse(value);\n    if (!Array.isArray(result) || !result.length || !result.every(row => Array.isArray(row) && row.length === result[0].length && row.every(Number.isFinite))) throw new Error('Enter a rectangular numeric JSON matrix.');\nstate.result = result;\nemit(result);\nawait render();",
+        "recipe": "Matrix",
+        "render": "// Shared context: state is saved JSON, inputs are named ports, value is Parameter.\n// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "query",
+      "type": "block",
+      "position": {
+        "x": 360,
+        "y": 0
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Query projection",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(modules.math.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\nemit(state.result);\nawait render();",
+        "recipe": "Linear",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "key",
+      "type": "block",
+      "position": {
+        "x": 360,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Key projection",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(modules.math.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\nemit(state.result);\nawait render();",
+        "recipe": "Linear",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "value",
+      "type": "block",
+      "position": {
+        "x": 360,
+        "y": 600
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Value projection",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[0,0]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(modules.math.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\nemit(state.result);\nawait render();",
+        "recipe": "Linear",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "attention",
+      "type": "block",
+      "position": {
+        "x": 720,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Scaled attention",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,0],[0,1]],\"b\":[[1,0],[0,1]],\"c\":[[1,2],[3,4]],\"causal\":false}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.attention(inputs.input1 ?? config.a, inputs.input2 ?? config.b, inputs.input3 ?? config.c, config.causal ?? false);\nemit(state.result);\nawait render();",
+        "recipe": "Attention",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "residual1",
+      "type": "block",
+      "position": {
+        "x": 1080,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Add / residual",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2]],\"b\":[[3,4]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\nemit(state.result);\nawait render();",
+        "recipe": "Add",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "norm1",
+      "type": "block",
+      "position": {
+        "x": 1440,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Layer norm",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2,3]],\"epsilon\":0.00001}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.layerNorm(inputs.input1 ?? config.a, config.epsilon ?? 1e-5);\nemit(state.result);\nawait render();",
+        "recipe": "LayerNorm",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "ffn-up",
+      "type": "block",
+      "position": {
+        "x": 1800,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Linear projection",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2]],\"b\":[[1,0,1,0],[0,1,0,1]],\"c\":[0,0,0,0]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(modules.math.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\nemit(state.result);\nawait render();",
+        "recipe": "Linear",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "activation",
+      "type": "block",
+      "position": {
+        "x": 2160,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "GELU",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[-1,0,1]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.gelu(inputs.input1 ?? config.a);\nemit(state.result);\nawait render();",
+        "recipe": "GELU",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "ffn-down",
+      "type": "block",
+      "position": {
+        "x": 2520,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Linear projection",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2,3,4]],\"b\":[[0.5,0],[0,0.5],[0.5,0],[0,0.5]],\"c\":[0,0]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "in-2",
+            "name": "in 3",
+            "type": "input",
+            "side": "left",
+            "variable": "input3"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(modules.math.matmul(inputs.input1 ?? config.a, inputs.input2 ?? config.b), inputs.input3 ?? config.c);\nemit(state.result);\nawait render();",
+        "recipe": "Linear",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "residual2",
+      "type": "block",
+      "position": {
+        "x": 2880,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Add / residual",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2]],\"b\":[[3,4]]}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "in-1",
+            "name": "in 2",
+            "type": "input",
+            "side": "left",
+            "variable": "input2"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.add(inputs.input1 ?? config.a, inputs.input2 ?? config.b);\nemit(state.result);\nawait render();",
+        "recipe": "Add",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "norm2",
+      "type": "block",
+      "position": {
+        "x": 3240,
+        "y": 300
+      },
+      "width": 260,
+      "height": 200,
+      "data": {
+        "label": "Layer norm",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "{\"a\":[[1,2,3]],\"epsilon\":0.00001}",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          },
+          {
+            "id": "out-0",
+            "name": "out",
+            "type": "output",
+            "side": "right",
+            "variable": "output1"
+          }
+        ],
+        "module": "// Inputs override the example defaults stored in Parameter.\nconst config = JSON.parse(value);\nif (!modules.math) throw new Error('Import the math library from Libraries.');\nstate.result = modules.math.layerNorm(inputs.input1 ?? config.a, config.epsilon ?? 1e-5);\nemit(state.result);\nawait render();",
+        "recipe": "LayerNorm",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    },
+    {
+      "id": "output",
+      "type": "block",
+      "position": {
+        "x": 3600,
+        "y": 300
+      },
+      "width": 300,
+      "height": 200,
+      "data": {
+        "label": "Transformer output",
+        "kind": "javascript",
+        "description": "A programmable, input-driven mask",
+        "color": "#171717",
+        "value": "",
+        "ports": [
+          {
+            "id": "in-0",
+            "name": "in 1",
+            "type": "input",
+            "side": "left",
+            "variable": "input1"
+          }
+        ],
+        "module": "state.result = inputs.input1;\nawait render();",
+        "recipe": "MathView",
+        "render": "// state.result: numeric scalar, vector, matrix, nested tensor or { shape, data }.\n// Tune precision here; limit rows/columns to keep large tensors readable.\nconst precision = 4;\nconst format = x => Number(x.toPrecision(precision)).toString();\nconst matrix = rows => String.raw`\\begin{bmatrix}${rows.slice(0, 8).map(row => row.slice(0, 8).map(format).join(' & ')).join(String.raw` \\\\ `)}\\end{bmatrix}`;\nlet result = state.result;\nlet prefix = '';\nif (result && Array.isArray(result.shape)) {\n  // Show the first 2D slice; change this slice offset for another tensor page.\n  const shape = result.shape, cols = shape.at(-1), rows = shape.at(-2) ?? 1;\n  prefix = String.raw`\\mathcal{T}_{${shape.join(String.raw` \\times `)}} = `;\n  result = Array.from({ length: Math.min(rows, 8) }, (_, i) => result.data.slice(i * cols, (i + 1) * cols));\n}\nwhile (Array.isArray(result?.[0]?.[0])) result = result[0];\nconst tex = typeof result === 'number' ? format(result)\n  : Array.isArray(result) ? matrix(Array.isArray(result[0]) ? result : [result]) : String.raw`\\text{Connect a numeric input}`;\nlatex(element, prefix + tex);",
+        "state": {}
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "tokens-query-0",
+      "source": "tokens",
+      "target": "query",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "tokens-key-0",
+      "source": "tokens",
+      "target": "key",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "tokens-value-0",
+      "source": "tokens",
+      "target": "value",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "query-attention-0",
+      "source": "query",
+      "target": "attention",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "key-attention-1",
+      "source": "key",
+      "target": "attention",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "value-attention-2",
+      "source": "value",
+      "target": "attention",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-2",
+      "type": "smoothstep"
+    },
+    {
+      "id": "attention-residual1-0",
+      "source": "attention",
+      "target": "residual1",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "tokens-residual1-1",
+      "source": "tokens",
+      "target": "residual1",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "residual1-norm1-0",
+      "source": "residual1",
+      "target": "norm1",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "norm1-ffn-up-0",
+      "source": "norm1",
+      "target": "ffn-up",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "ffn-up-activation-0",
+      "source": "ffn-up",
+      "target": "activation",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "activation-ffn-down-0",
+      "source": "activation",
+      "target": "ffn-down",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "ffn-down-residual2-0",
+      "source": "ffn-down",
+      "target": "residual2",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "norm1-residual2-1",
+      "source": "norm1",
+      "target": "residual2",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-1",
+      "type": "smoothstep"
+    },
+    {
+      "id": "residual2-norm2-0",
+      "source": "residual2",
+      "target": "norm2",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    },
+    {
+      "id": "norm2-output-0",
+      "source": "norm2",
+      "target": "output",
+      "sourceHandle": "out-0",
+      "targetHandle": "in-0",
+      "type": "smoothstep"
+    }
+  ]
+}
